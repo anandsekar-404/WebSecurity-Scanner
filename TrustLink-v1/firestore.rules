@@ -1,0 +1,36 @@
+rules_version = '2';
+
+// Deploy: Firebase Console → Firestore Database → Rules → paste this → Publish.
+//
+// What this protects: prevents user A from reading or overwriting user B's
+// document. It does NOT prevent a user from editing their OWN document's
+// values via devtools (e.g. forging instagramRequirementCompleted for
+// themselves) — no purely client-side extension can fully prevent that
+// without a trusted backend (e.g. a Cloud Function) as the sole writer of
+// sensitive fields. Since Instagram doesn't expose a "does user X follow
+// account Y" API to verify server-side anyway, TrustLink's Instagram step
+// is intentionally a self-reported confirmation, not a cryptographic
+// guarantee — these rules are about data isolation between users, not
+// making the gate unbeatable.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+
+      allow create: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.data.manualScanCount is int
+        && request.resource.data.manualScanCount >= 0
+        && request.resource.data.manualScanCount <= 100000;
+
+      allow update: if request.auth != null
+        && request.auth.uid == userId
+        // Never allow the counter to move backwards from the client.
+        && request.resource.data.manualScanCount >= resource.data.manualScanCount
+        && request.resource.data.manualScanCount <= resource.data.manualScanCount + 1000;
+
+      allow delete: if false; // reliability data is never client-deletable
+    }
+  }
+}
