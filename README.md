@@ -10,7 +10,7 @@
 
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-brightgreen?style=flat-square)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.3.2-purple?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.3.1-purple?style=flat-square)
 ![Cybersecurity](https://img.shields.io/badge/Focus-Cybersecurity-red?style=flat-square)
 
 </div>
