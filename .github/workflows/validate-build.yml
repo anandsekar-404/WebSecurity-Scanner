@@ -1,16 +1,26 @@
 name: TrustLink Validate & Build
+
 on:
   push:
   pull_request:
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: TrustLink-v1
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
       - run: npm test
+
       - name: Build extension
         env:
           TRUSTLINK_FIREBASE_API_KEY: ${{ secrets.TRUSTLINK_FIREBASE_API_KEY }}
