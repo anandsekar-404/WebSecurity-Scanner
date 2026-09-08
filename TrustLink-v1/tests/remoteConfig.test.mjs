@@ -64,8 +64,21 @@ function assert(cond, msg) {
 
 async function run() {
   const { getTrustLinkConfig, getCachedTrustLinkConfig, getDebugStatus } = await import("../lib/remoteConfig.js");
+  const { isFirebaseConfigured } = await import("../lib/firebase-config.js");
   const { buildDefaultConfig } = await import("../lib/heuristics/defaults.js");
   const defaults = buildDefaultConfig();
+
+  if (!isFirebaseConfigured) {
+    console.log("Scenario: source checkout without a build-time Firebase key falls back to local defaults");
+    resetStorage();
+    let calls = 0;
+    globalThis.fetch = async () => { calls++; throw new Error("unconfigured source checkout must not call Firebase"); };
+    const config = await getTrustLinkConfig({ forceRefresh: true });
+    assert(calls === 0, "unconfigured source checkout made ZERO Firebase calls");
+    assert(config.source === "default", `configuration source is built-in defaults — got ${config.source}`);
+    console.log("ALL REMOTE CONFIG SOURCE-CHECKOUT TESTS PASSED");
+    return;
+  }
 
   console.log("Scenario: successful fetch calls Installations THEN Remote Config, in that order");
   {

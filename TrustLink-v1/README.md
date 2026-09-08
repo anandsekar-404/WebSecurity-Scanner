@@ -452,3 +452,17 @@ Built by **[GitHub](https://github.com/anandsekar-404)**, **[LinkedIn](https://w
 - LinkedIn: [anand1802](https://www.linkedin.com/in/anand1802)
 - GitHub: [anandsekar-404](https://github.com/anandsekar-404)
 - Discord: anand.404
+
+
+## Build-time Firebase API key injection
+
+The source repository contains a placeholder instead of the Firebase Web API key.
+Run `npm run build` with `TRUSTLINK_FIREBASE_API_KEY` set to create `dist/` with
+the key injected. Without the variable, the build is local-only and uses the
+built-in TrustLink detection defaults.
+
+For GitHub Actions, add a repository secret named
+`TRUSTLINK_FIREBASE_API_KEY`. The included workflow passes it only to the build
+step. The key is public Firebase client configuration by design; this workflow
+keeps it out of the source repository, but it cannot make the key secret inside
+the final Chrome extension package.

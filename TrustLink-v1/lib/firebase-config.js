@@ -14,7 +14,7 @@
 // scan-gate state across devices.
 
 export const firebaseConfig = {
-  apiKey: "AIzaSyCNDmn353fXbBAZUQKpR4UTslYMSs2vjAs",
+  apiKey: "__TRUSTLINK_FIREBASE_API_KEY__",
   authDomain: "trsutlink.firebaseapp.com",
   projectId: "trsutlink",
   storageBucket: "trsutlink.firebasestorage.app",
@@ -26,7 +26,12 @@ export const firebaseConfig = {
 // apiKey/projectId above is necessary for Remote Config to attempt a
 // fetch, but — deliberately — it is NOT sufficient on its own to enable
 // Firestore reliability sync. See firestoreSyncEnabled below.
-export const isFirebaseConfigured = Boolean(firebaseConfig.apiKey && firebaseConfig.projectId);
+const SOURCE_PLACEHOLDER = "__TRUSTLINK_" + "FIREBASE_API_KEY__";
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey &&
+  firebaseConfig.apiKey !== SOURCE_PLACEHOLDER &&
+  firebaseConfig.projectId
+);
 
 // Separate, explicit opt-in for lib/firebaseSync.js (Firestore sync of the
 // manual-scan-count / Instagram-gate reliability fields — never URLs,

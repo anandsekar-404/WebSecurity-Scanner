@@ -1,0 +1,5 @@
+/dist/
+.env
+.env.*
+!.env.example
+lib/firebase-config.local.js

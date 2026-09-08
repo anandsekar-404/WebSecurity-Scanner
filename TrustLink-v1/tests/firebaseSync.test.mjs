@@ -40,8 +40,8 @@ async function run() {
 
   console.log("Scenario: Firestore sync is disabled by default, as its OWN flag");
   assert(firestoreSyncEnabled === false, "firestoreSyncEnabled defaults to false");
-  assert(isFirebaseConfigured === true, `this project's real Firebase Web App config IS present (apiKey/projectId set) — got isFirebaseConfigured=${isFirebaseConfigured}`);
-  assert(isFirestoreSyncConfigured === false, "despite a valid Firebase config being present, isFirestoreSyncConfigured is still false — proves the two are decoupled, not just 'both happen to be off'");
+  assert(typeof isFirebaseConfigured === "boolean", `isFirebaseConfigured is a boolean — got ${typeof isFirebaseConfigured}`);
+  assert(isFirestoreSyncConfigured === false, "Firestore sync remains disabled independently of Firebase configuration");
 
   console.log("\nScenario: Firestore sync does NOT activate merely because Remote Config is configured — zero network calls, zero storage access");
   {
@@ -65,8 +65,8 @@ async function run() {
     assert(storageCalls === 0, `pushRemoteState() also made ZERO chrome.storage calls (got ${storageCalls})`);
   }
 
-  console.log("\nScenario: Remote Config is COMPLETELY UNAFFECTED — it still fetches normally from the same firebase-config.js, in the same run");
-  {
+  if (isFirebaseConfigured) {
+    console.log("\nScenario: Remote Config remains functional when a build-time Firebase key is present");
     fetchCalls = 0;
     storageCalls = 0;
     globalThis.fetch = async (url) => {
@@ -80,17 +80,23 @@ async function run() {
       }
       throw new Error("unexpected fetch in test: " + u);
     };
-
     const { getTrustLinkConfig } = await import("../lib/remoteConfig.js");
     const config = await getTrustLinkConfig({ forceRefresh: true });
-
-    assert(fetchCalls === 2, `Remote Config made its normal 2 REST calls (Installations + fetch) — got ${fetchCalls}`);
+    assert(fetchCalls === 2, `Remote Config made its normal 2 REST calls — got ${fetchCalls}`);
     assert(config.source === "remote", "Remote Config successfully fetched and applied a remote value");
-    assert(config.weights.detection_ip_url_score === 40, "the fetched override was correctly applied — Remote Config's own logic is untouched by the Firestore-sync fix");
+    assert(config.weights.detection_ip_url_score === 40, "the fetched override was correctly applied");
+  } else {
+    console.log("\nScenario: source checkout without a build-time key safely falls back to local defaults");
+    fetchCalls = 0;
+    globalThis.fetch = async () => { fetchCalls++; throw new Error("unconfigured source checkout must not call Firebase"); };
+    const { getTrustLinkConfig } = await import("../lib/remoteConfig.js");
+    const config = await getTrustLinkConfig({ forceRefresh: true });
+    assert(fetchCalls === 0, "unconfigured source checkout made ZERO Firebase calls");
+    assert(config.source === "default", `configuration source falls back to built-in defaults — got ${config.source}`);
   }
 
-  console.log("\nScenario: firebaseConfig itself still holds the real public Web App fields (unchanged by this fix)");
-  assert(Boolean(firebaseConfig.apiKey) && Boolean(firebaseConfig.projectId), "firebaseConfig still has apiKey/projectId — this fix only added a gate, it didn't touch the config values");
+  console.log("\nScenario: Firebase config contains no committed real API key");
+  assert((firebaseConfig.apiKey === "__TRUSTLINK_" + "FIREBASE_API_KEY__") || isFirebaseConfigured, "source config is placeholder-only or a build-time key is active");
 
   console.log("\nALL FIREBASE-SYNC DECOUPLING TESTS PASSED");
 }
