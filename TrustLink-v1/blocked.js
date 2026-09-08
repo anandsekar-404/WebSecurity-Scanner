@@ -11,14 +11,28 @@ async function init() {
   document.getElementById("blockedUrl").textContent = info.url;
   document.getElementById("blockedScoreBadge").textContent = `${info.score} / 100`;
   document.getElementById("blockedLabel").textContent = info.label;
-  document.getElementById("blockedTitle").textContent =
-    info.tone === "danger" ? "Dangerous website blocked" : "This site needs a closer look";
+
+  const titles = {
+    critical: "Known phishing website blocked",
+    danger: "Dangerous website blocked",
+  };
+  document.getElementById("blockedTitle").textContent = titles[info.tone] || "This site needs a closer look";
+
+  // A confirmed threat-database match is always the first finding (see
+  // analyzer.js's applyThreatMatch) — surface it as its own line, spec
+  // section 37's "Threat Intelligence: <source>" format, ahead of the
+  // regular heuristic reasons.
+  const threatMatch = info.findings.find((f) => f.id === "known-threat-match");
+
+  document.getElementById("bgGlow")?.classList.add(info.tone === "critical" ? "critical" : "danger");
+  document.querySelector(".blocked-shell")?.classList.add(info.tone === "critical" ? "critical" : "danger");
 
   const list = document.getElementById("blockedReasonsList");
-  const reasons = info.findings.filter((f) => f.level === "high" || f.level === "medium").slice(0, 6);
-  list.innerHTML = (reasons.length ? reasons : [{ title: "Multiple risk signals detected in this address" }])
-    .map((f) => `<li>${escapeHtml(f.title)}</li>`)
-    .join("");
+  const reasons = info.findings.filter((f) => f.id !== "known-threat-match" && (f.level === "high" || f.level === "medium")).slice(0, 6);
+  const items = [];
+  if (threatMatch) items.push(`<li><strong>${escapeHtml(threatMatch.title)}</strong> — ${escapeHtml(threatMatch.detail)}</li>`);
+  items.push(...(reasons.length ? reasons : items.length ? [] : [{ title: "Multiple risk signals detected in this address" }]).map((f) => `<li>${escapeHtml(f.title)}</li>`));
+  list.innerHTML = items.join("");
 
   window.__blockInfo = info;
 }

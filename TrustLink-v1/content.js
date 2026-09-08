@@ -5,7 +5,8 @@
   // of Manual Page Scan's gating, and is skipped entirely while the user
   // has paused it via the "Stop Scanning" control.
   chrome.runtime.sendMessage({ type: "inspect", url: location.href, updateBadge: true, isAutomatic: true }).then((result) => {
-    if (!result || result.error || result.stopped || result.score < 60) return;
+    if (!result || result.error || result.stopped) return;
+    if (result.tone !== "danger" && result.tone !== "critical") return;
     if (document.getElementById("trustlink-warning")) return;
     injectBanner(result);
   }).catch(() => {});
@@ -71,9 +72,9 @@
       </style>
       <div class="card" role="alert">
         <div class="row">
-          <div class="badge">⚠</div>
+          <div class="badge">${result.tone === "critical" ? "⛔" : "⚠"}</div>
           <div>
-            <p class="title">TrustLink — High Risk (<span class="score">${result.score}</span>/100)</p>
+            <p class="title">TrustLink — ${escapeHtml(result.label)} (<span class="score">${result.score}</span>/100)</p>
             <p class="sub">${escapeHtml(result.domain || "")}</p>
           </div>
         </div>

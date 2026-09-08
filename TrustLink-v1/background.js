@@ -1,4 +1,4 @@
-import { analyzeUrl, analyzeResponse, grade } from "./analyzer.js";
+import { analyzeUrl, analyzeResponse, grade, applyThreatMatch } from "./analyzer.js";
 import {
   getGateState,
   canRunManualScan,
@@ -8,6 +8,11 @@ import {
   isAutoScanEnabled,
 } from "./lib/state.js";
 import { initBlocking, approveOnce, getBlockReason } from "./lib/blocking.js";
+import { getTrustLinkConfig, getDebugStatus } from "./lib/remoteConfig.js";
+import { defaultThreatDb as threatDb } from "./lib/threatDb.js";
+import { normalizeForLookup } from "./lib/urlUtils.js";
+import { updateOpenPhishFeed, SOURCE_NAME as OPENPHISH_SOURCE } from "./lib/adapters/openphish.js";
+import { unavailableReason as phishtankUnavailableReason } from "./lib/adapters/phishtank.js";
 
 // Short-lived in-memory cache so re-opening the popup on the same page
 // doesn't repeat the network request. Cleared on service worker restart.
@@ -22,20 +27,33 @@ function normalizeUrl(raw) {
   return `https://${trimmed}`;
 }
 
+async function checkThreatDatabase(config, urlString) {
+  if (!config.features.feature_openphish || config.protection.disable_openphish) return { matched: false };
+  try {
+    return await threatDb.lookup(normalizeForLookup(urlString));
+  } catch {
+    return { matched: false }; // local DB hiccup must never break a scan
+  }
+}
+
 async function inspect(rawUrl) {
   const urlString = normalizeUrl(rawUrl);
   const key = urlString;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.time < CACHE_MS) return hit.result;
 
-  const base = analyzeUrl(urlString);
+  // Best-effort: uses cached/default config immediately if Firebase is slow
+  // or unreachable — never blocks a scan on Remote Config (spec section 12).
+  const config = await getTrustLinkConfig();
+
+  const base = analyzeUrl(urlString, config);
   let score = base.score;
   let findings = [...base.findings];
 
   if (base.safeToFetch) {
     try {
       const response = await fetch(urlString, { method: "HEAD", redirect: "follow", cache: "no-store" });
-      const headerCheck = analyzeResponse(urlString, response);
+      const headerCheck = analyzeResponse(urlString, response, config);
       score += headerCheck.scoreDelta;
       findings = [...findings, ...headerCheck.findings];
     } catch {
@@ -47,7 +65,7 @@ async function inspect(rawUrl) {
   }
 
   const finalScore = Math.max(0, Math.min(Math.round(score), 100));
-  const result = {
+  let result = {
     url: urlString,
     domain: base.host,
     score: finalScore,
@@ -56,6 +74,12 @@ async function inspect(rawUrl) {
     checkedAt: new Date().toISOString(),
   };
 
+  // A confirmed local threat-database match overrides the heuristic grade
+  // entirely — this is the ONLY path that produces tone: "critical". See
+  // analyzer.js's applyThreatMatch() doc comment.
+  const match = await checkThreatDatabase(config, urlString);
+  if (match.matched) result = applyThreatMatch(result, match);
+
   cache.set(key, { result, time: Date.now() });
   return result;
 }
@@ -63,6 +87,7 @@ async function inspect(rawUrl) {
 function setBadge(tabId, result) {
   if (tabId == null) return;
   const byTone = {
+    critical: { text: "!!", color: "#8b0000" },
     danger: { text: "!", color: "#ff4d68" },
     warning: { text: "!", color: "#f6c752" },
     safe: { text: "", color: "#35d6ab" },
@@ -86,6 +111,21 @@ async function clearAllBadges() {
 // its own webNavigation listener; independent of manual-scan gating and the
 // automatic content-script scan below.
 initBlocking();
+
+// Best-effort, fire-and-forget local threat-database refresh. Runs once per
+// service-worker wake, never blocks message-listener registration above,
+// and updateOpenPhishFeed() internally no-ops if the feed was refreshed
+// more recently than system_feed_update_interval_ms (spec section 13 — no
+// aggressive polling). A failed refresh silently keeps whatever database
+// TrustLink already had (spec section 39).
+(async () => {
+  try {
+    const config = await getTrustLinkConfig();
+    if (config.features.feature_openphish && !config.protection.disable_openphish) {
+      await updateOpenPhishFeed(threatDb, { minIntervalMs: config.system.system_feed_update_interval_ms });
+    }
+  } catch { /* best-effort startup refresh only */ }
+})();
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
   switch (message?.type) {
@@ -173,6 +213,38 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       respond({ ok: true });
       return false;
+    }
+
+    // Developer-only diagnostics panel (spec section 48). Read-only —
+    // never triggers a fetch itself, just reports the state of the last one.
+    case "getDebugStatus": {
+      Promise.all([getDebugStatus(), threatDb.getStatus()])
+        .then(([remoteConfigStatus, threatDbStatus]) => {
+          respond({
+            firebase: remoteConfigStatus,
+            threatSources: {
+              [OPENPHISH_SOURCE]: threatDbStatus.find((s) => s.source === OPENPHISH_SOURCE) || { database_status: "no data yet" },
+              PhishTank: { database_status: "unavailable", reason: phishtankUnavailableReason },
+            },
+          });
+        })
+        .catch((error) => respond({ error: error.message }));
+      return true;
+    }
+
+    // Manual "force refresh" for the debug panel — bypasses both Remote
+    // Config's and the OpenPhish adapter's normal fetch-interval throttling.
+    case "forceRefreshThreatData": {
+      (async () => {
+        try {
+          const config = await getTrustLinkConfig({ forceRefresh: true });
+          const feedResult = await updateOpenPhishFeed(threatDb, { force: true });
+          respond({ ok: true, config: config.source, feedResult });
+        } catch (error) {
+          respond({ ok: false, error: error.message });
+        }
+      })();
+      return true;
     }
 
     default:

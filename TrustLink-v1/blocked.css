@@ -12,6 +12,17 @@ body.blocked-page {
     radial-gradient(360px 260px at -10% 100%, rgba(255, 77, 104, 0.08), transparent 60%);
 }
 
+.bg-glow.critical {
+  background:
+    radial-gradient(480px 280px at 50% -10%, rgba(255, 23, 79, 0.26), transparent 60%),
+    radial-gradient(360px 260px at -10% 100%, rgba(255, 23, 79, 0.12), transparent 60%);
+}
+
+.blocked-shell.critical {
+  border-color: rgba(255, 23, 79, 0.55);
+  box-shadow: 0 30px 80px rgba(180, 5, 30, 0.35), 0 0 0 1px rgba(0,0,0,0.4);
+}
+
 .blocked-shell {
   width: 100%;
   max-width: 540px;

@@ -7,7 +7,7 @@
 // out to the caller — sync failures should never block or corrupt the
 // local, authoritative chrome.storage.local state.
 
-import { firebaseConfig, isFirebaseConfigured } from "./firebase-config.js";
+import { firebaseConfig, isFirestoreSyncConfigured } from "./firebase-config.js";
 
 const TOKEN_KEYS = {
   uid: "tl_fb_uid",
@@ -45,7 +45,7 @@ async function refreshIdToken(refreshToken) {
 
 /** Returns { uid, idToken } or null if unconfigured/offline/failed. Never throws. */
 async function getAuthContext() {
-  if (!isFirebaseConfigured) return null;
+  if (!isFirestoreSyncConfigured) return null; // Firestore sync is a separate opt-in from Remote Config — see lib/firebase-config.js
   try {
     const cached = await getLocal(TOKEN_KEYS);
     const now = Date.now();

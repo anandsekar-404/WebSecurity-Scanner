@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TrustLink",
-  "version": "1.3.2",
+  "version": "2.0.0",
   "description": "Verify the link. Protect the click. A passive, privacy-first risk assistant that scores any site 0-100 and explains exactly why.",
   "permissions": [
     "activeTab",

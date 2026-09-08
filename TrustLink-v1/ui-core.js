@@ -24,7 +24,7 @@ function cardIcon(finding) {
 
 function pillIcon(tone) {
   if (tone === "safe") return ICONS.check;
-  if (tone === "warning" || tone === "danger") return ICONS.triangle;
+  if (tone === "warning" || tone === "danger" || tone === "critical") return ICONS.triangle;
   return ICONS.spinner;
 }
 
@@ -48,7 +48,7 @@ function countUp(el, to, duration = 700) {
 }
 
 function toneClass(tone) {
-  return { safe: "safe", warning: "warning", danger: "danger" }[tone] || "loading";
+  return { safe: "safe", warning: "warning", danger: "danger", critical: "critical" }[tone] || "loading";
 }
 
 function setLoading() {
@@ -82,6 +82,7 @@ function showError(message) {
 }
 
 function adviceCopy(result) {
+  if (result.tone === "critical") return { title: "Known threat — do not proceed", sub: result.action };
   if (result.tone === "danger") return { title: "Do not proceed", sub: result.action };
   if (result.tone === "warning") return { title: "Proceed carefully", sub: result.action };
   return { title: "You're good to go", sub: result.action };
@@ -168,7 +169,7 @@ function render(result, { isManual = false, tab = null } = {}) {
   }
 
   const ctaRow = $("#ctaRow");
-  if (tone === "danger" && !isManual && tab) {
+  if ((tone === "danger" || tone === "critical") && !isManual && tab) {
     ctaRow.hidden = false;
     $("#ctaPrimary").onclick = () => {
       chrome.tabs.goBack(tab.id).catch(() => {
