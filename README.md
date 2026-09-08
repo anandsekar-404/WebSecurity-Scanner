@@ -1,343 +1,243 @@
-# 🛡️ TrustLink
+# 🛡️ TrustLink V2
 
 <div align="center">
 
-![TrustLink Banner](https://img.shields.io/badge/TrustLink-Security%20Starts%20Before%20You%20Click-00d4ff?style=for-the-badge)
+![TrustLink](https://img.shields.io/badge/TrustLink-Verify%20the%20Link.%20Protect%20the%20Click.-00d4ff?style=for-the-badge)
 
 ### 🔗 Verify the Link. Protect the Click.
 
-**A privacy-first Chrome extension that helps you identify suspicious and potentially dangerous websites before you trust them.**
+**A privacy-focused Chrome extension that detects suspicious and potentially dangerous URLs before you trust them.**
 
-![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-brightgreen?style=flat-square)
+![Chrome](https://img.shields.io/badge/Chrome-Extension-brightgreen?style=flat-square)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.3.1-purple?style=flat-square)
+![Version](https://img.shields.io/badge/Version-2.0-purple?style=flat-square)
 ![Cybersecurity](https://img.shields.io/badge/Focus-Cybersecurity-red?style=flat-square)
 
 </div>
 
 ---
 
-## 🚀 About TrustLink
+## 🚀 About
 
-**TrustLink** is a browser security assistant designed to help users make safer decisions before interacting with suspicious websites.
+**TrustLink V2** is a browser security extension that analyzes URLs using multiple security signals and threat-intelligence sources.
 
-It analyzes URLs using multiple passive security signals and provides a simple **risk score from 0–100**, along with clear explanations of the detected warning signs.
+It provides a simple **0–100 risk score** and explains why a URL may be suspicious.
 
-Instead of simply saying a website is "safe" or "unsafe," TrustLink helps users understand **why a link may be suspicious**.
+V2 adds a modular detection system, local threat intelligence, Remote Config support, and stronger threat handling.
 
-> ⚠️ **TrustLink is a security assistant, not a guarantee that a website is completely safe or malicious.**
-
----
-
-# ✨ Features
-
-## 🔍 Smart URL Risk Analysis
-
-TrustLink analyzes suspicious characteristics in a URL and calculates a risk score.
-
-### 🟢 0–29 — Looks Safe
-
-No major warning signals were detected.
-
-### 🟡 30–59 — Use Caution
-
-Some suspicious characteristics were found.
-
-### 🔴 60–100 — High Risk
-
-Multiple strong warning signals were detected.
+> ⚠️ TrustLink provides a risk assessment. It does not guarantee that a website is completely safe or malicious.
 
 ---
 
-## 🧠 Detects Suspicious Signals
+## ✨ V2 Features
 
-TrustLink can identify indicators such as:
+### 🔍 Smart URL Analysis
 
-* 🔒 Missing HTTPS encryption
-* 🌐 Punycode / encoded domains
-* 🎭 Look-alike domains
-* 📍 Raw IP addresses used instead of domains
-* ⚠️ Misleading `@` URL structures
-* 🔗 Suspicious redirect parameters
-* 🧪 Phishing-related keywords
-* 🌍 Potentially risky domain structures
-* 🚨 Suspicious ports
-* 🔄 Redirect-related indicators
-* 🏷️ Trusted-brand impersonation attempts
+TrustLink checks multiple suspicious URL characteristics, including:
 
----
-
-## 🛑 Dangerous Website Blocking
-
-When TrustLink detects a URL with strong high-risk indicators, it can redirect the user to a warning page before the suspicious website fully loads.
-
-The warning page provides:
-
-* 🚨 Risk score
-* 📊 Threat level
-* 🔍 Specific reasons for the warning
-* 🏠 **Go back to safety** option
-* ⚠️ Advanced option to continue anyway after confirmation
-
-This gives users an opportunity to stop and think before proceeding.
+- 🔒 Missing HTTPS
+- 🌐 Punycode domains
+- 🎭 Homograph/look-alike domains
+- 📍 IP-based URLs
+- 🔗 URL obfuscation
+- 🌍 Suspicious TLDs
+- 🧪 Suspicious keywords
+- 🏷️ Brand impersonation
+- 🔀 Suspicious redirects
+- 🌐 Suspicious subdomains
+- ✏️ Typosquatting
 
 ---
 
-## 🤖 Automatic Background Scanning
+### 🛡️ Threat Intelligence
 
-TrustLink can automatically analyze supported webpages while you browse.
+V2 introduces a local threat-intelligence system with support for:
 
-You can easily control this feature:
+- OpenPhish
+- PhishTank
+- URLhaus
 
-🟢 **Scanning** — Automatic protection is active
-🔴 **Stopped** — Automatic scanning is paused
+Threat data can be stored locally and checked against URLs during analysis.
 
-Manual scanning remains available even when automatic scanning is turned off.
-
----
-
-## ✋ Manual Link Scanner
-
-You can manually check:
-
-* The website currently open in your browser
-* Any URL pasted into TrustLink
-
-Simply enter a link and let TrustLink analyze its visible risk signals.
+Known threats can receive a **Critical / Known Threat** result instead of relying only on heuristic scoring.
 
 ---
 
-## 🔐 Privacy-First Design
+### 📊 Risk Scoring
 
-TrustLink is designed with privacy in mind.
+TrustLink uses a **0–100 risk score**:
 
-The project focuses on **passive, read-only security checks** and does not attempt to:
+| Score | Risk |
+|---|---|
+| 🟢 0–29 | Looks Safe |
+| 🟡 30–59 | Use Caution |
+| 🔴 60–100 | High Risk |
+| 🚨 Confirmed threat | Critical / Known Threat |
 
-* ❌ Exploit websites
-* ❌ Attack servers
-* ❌ Brute-force targets
-* ❌ Flood websites with requests
-* ❌ Perform intrusive scanning
-
-The goal is simple:
-
-> **Help users recognize suspicious links without performing harmful actions against websites.**
+The result also includes the reasons detected by TrustLink.
 
 ---
 
-## ☁️ Optional Firebase Sync
+### ⚙️ Modular Detection
 
-TrustLink works locally using Chrome storage.
-
-Optional Firebase integration can synchronize selected application state, helping maintain certain settings across local data resets.
-
-The extension is designed to remain functional even without Firebase configuration.
-
----
-
-# 🖥️ Project Structure
+V2 separates detection logic into independent heuristic modules.
 
 ```text
+lib/heuristics/
+├── punycode.js
+├── homograph.js
+├── typosquatting.js
+├── brandImpersonation.js
+├── suspiciousTld.js
+├── suspiciousSubdomain.js
+├── ipUrl.js
+├── urlObfuscation.js
+├── redirect.js
+└── suspiciousKeywords.js
+
+This makes the detection system easier to test, maintain, and improve.
+
+☁️ Remote Configuration
+
+TrustLink V2 supports optional Firebase Remote Config for remotely managing safe configuration values such as:
+
+Detection weights
+Risk thresholds
+Feature flags
+
+Remote configuration is validated before being used.
+
+If Remote Config is unavailable, TrustLink falls back to built-in defaults.
+
+🔥 Firebase / Firestore
+
+Firestore synchronization is available as an optional feature.
+
+By default:
+
+Firestore Sync: OFF
+
+TrustLink remains functional without enabling Firestore synchronization.
+
+🔐 Privacy First
+
+TrustLink is designed around privacy and passive security analysis.
+
+It does not attempt to:
+
+❌ Exploit websites
+❌ Attack servers
+❌ Brute-force targets
+❌ Flood websites
+❌ Perform intrusive scanning
+
+Threat-intelligence data can be cached locally to reduce unnecessary requests.
+
+🧪 Testing
+
+V2 includes dedicated tests for:
+
+Heuristics
+Threat database
+OpenPhish
+Remote Config
+Configuration validation
+Firebase synchronization
+Blocking
+State management
+
+Run the tests:
+
+for f in tests/*.test.mjs; do node "$f" || break; done
+
+On Windows PowerShell:
+
+Get-ChildItem tests\*.test.mjs | ForEach-Object { node $_.FullName }
+📁 Project Structure
 TrustLink-v1/
 │
-├── 📄 manifest.json
+├── manifest.json
+├── analyzer.js
+├── background.js
+├── content.js
+├── popup.html
+├── popup.css
+├── popup.js
+├── blocked.html
+├── blocked.css
+├── blocked.js
+├── ui-core.js
 │
-├── 🧠 analyzer.js
-├── ⚙️ background.js
-├── 📡 content.js
-│
-├── 🎨 app.html
-├── 🎨 app.css
-├── ⚡ app.js
-│
-├── 🪟 popup.html
-├── 🎨 popup.css
-├── ⚡ popup.js
-│
-├── 🚨 blocked.html
-├── 🎨 blocked.css
-├── ⚡ blocked.js
-│
-├── 🧩 ui-core.js
-│
-├── 📁 lib/
-│   ├── blocking.js
+├── lib/
+│   ├── adapters/
+│   │   ├── openphish.js
+│   │   ├── phishtank.js
+│   │   └── urlhaus.js
+│   │
+│   ├── heuristics/
+│   ├── configValidation.js
+│   ├── remoteConfig.js
+│   ├── threatDb.js
+│   ├── urlUtils.js
 │   ├── firebase-config.js
 │   ├── firebaseSync.js
+│   ├── blocking.js
 │   └── state.js
 │
-├── 📁 tests/
-│   ├── blocking.test.mjs
-│   └── state.test.mjs
-│
-├── 🔥 firestore.rules
-│
-├── 🖼️ icon16.png
-├── 🖼️ icon32.png
-├── 🖼️ icon48.png
-├── 🖼️ icon128.png
-├── 🖼️ cybroatrix-logo.png
-│
-└── 📖 README.md
-```
-
----
-
-# 📥 Installation
-
-## Method 1 — Load as an Unpacked Extension
-
-### Step 1
-
-Download or clone this repository.
-
-```bash
-git clone https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-```
-
-### Step 2
-
-Open Google Chrome and go to:
-
-```text
+└── tests/
+📥 Installation
+1. Clone the repository
+git clone https://github.com/anandsekar-404/WebSecurity-Scanner.git
+2. Open Chrome
 chrome://extensions
-```
+3. Enable
 
-### Step 3
+Developer mode
 
-Enable:
+4. Select
 
-> 🛠️ Developer mode
+Load unpacked
 
-### Step 4
+5. Choose
+TrustLink-v1/
 
-Click:
+That's it. 🚀
 
-> 📂 Load unpacked
+🛠️ Built With
+JavaScript (ES6+)
+HTML5
+CSS3
+Chrome Extensions API
+Chrome Manifest V3
+Chrome Storage API
+Firebase / Firestore
+Threat Intelligence Feeds
+⚠️ Disclaimer
 
-### Step 5
+TrustLink uses heuristics and threat-intelligence data to estimate website risk.
 
-Select the main **TrustLink-v1** project folder.
+A low score does not guarantee safety, and a high score does not always prove malicious activity unless supported by confirmed threat intelligence.
 
-### Step 6
+Always verify important websites and avoid entering sensitive information on suspicious pages.
 
-Pin **TrustLink** from the Chrome Extensions menu.
+🔮 V3 Roadmap
 
-🎉 **TrustLink is now ready to use!**
+Planned improvements include:
 
----
-
-# 🧪 Running Tests
-
-The project includes tests for important application logic.
-
-For example:
-
-```bash
-node tests/state.test.mjs
-```
-
-Tests help verify the application's state and security-related logic.
-
----
-
-# 🛠️ Built With
-
-* 🌐 JavaScript
-* 🎨 HTML5
-* 💅 CSS3
-* 🧩 Chrome Extensions API
-* 🛡️ Chrome Manifest V3
-* 💾 Chrome Storage API
-* 🔥 Firebase / Firestore *(optional)*
-
----
-
-# 🧭 How It Works
-
-```text
-        User Opens a Website
-                │
-                ▼
-        ┌─────────────────┐
-        │   TrustLink     │
-        │ Automatic Scan  │
-        └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │ URL Analysis    │
-        │ Security Signals│
-        └────────┬────────┘
-                 │
-                 ▼
-        ┌─────────────────┐
-        │ Risk Score      │
-        │    0 ── 100     │
-        └────────┬────────┘
-                 │
-        ┌────────┼────────┐
-        ▼        ▼        ▼
-      🟢 Safe   🟡 Caution  🔴 High Risk
-                            │
-                            ▼
-                     🚨 Warning Page
-```
-
----
-
-# ⚠️ Important Disclaimer
-
-TrustLink uses heuristic analysis and security indicators to estimate potential risk.
-
-A high score does **not always prove** that a website is malicious.
-
-Similarly, a low score does **not guarantee** that a website is completely safe.
-
-Users should always:
-
-* Verify important websites manually
-* Avoid entering passwords on suspicious pages
-* Check the domain carefully
-* Avoid unknown downloads
-* Be cautious with urgent messages and redirects
-
-> **TrustLink helps you make a better decision — but cybersecurity awareness is always the strongest protection.**
-
----
-
-# 🔮 Future Ideas
-
-Some ideas planned for future versions:
-
-* [ ] Improved phishing detection
-* [ ] AI-assisted URL analysis
-* [ ] Community threat reporting
-* [ ] Domain reputation checking
-* [ ] Advanced browser notifications
-* [ ] Better threat intelligence integration
-* [ ] Scan history dashboard
-* [ ] Trusted website allowlist
-* [ ] Improved Firebase synchronization
-* [ ] Enhanced visual threat reports
-
----
-
-# 👨‍💻 Project
-
-**TrustLink**
-*Verify the Link. Protect the Click.*
-
-A cybersecurity-focused browser extension project built to promote safer browsing and better awareness of suspicious links.
-
----
-
+ Pre-navigation protection
+ Right-click URL analysis
+ Hover link analysis
+ Explainable security reports
+ Redirect-chain analysis
+ Improved brand impersonation detection
+ Domain intelligence
+ Risk history
+ Enhanced threat intelligence
 <div align="center">
+🛡️ Think Before You Click.
 
-### 🛡️ Think Before You Click.
+TrustLink — Verify the Link. Protect the Click.
 
-**TrustLink — Verify the Link. Protect the Click.**
-
-⭐ **If you find this project useful, consider giving the repository a star!**
+⭐ If you find TrustLink useful, consider giving the repository a star!
 
 </div>
