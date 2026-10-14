@@ -345,11 +345,7 @@ small CybroatriX footer credit.
 | `webRequest` | Passive, non-blocking `onHeadersReceived` listener on main-frame requests to read security headers directly from the real browser navigation response, eliminating duplicate network requests. |
 | `host_permissions` (`http`/`https`) | Allows the content script to run on visited pages for credential harvesting protection, the pre-navigation blocker to inspect destination URLs, the OpenPhish threat feed download, and optional opt-in deep header checks. |
 
-**Privacy by design:** No browsing history, page content, or personal data is collected beyond
-what's described above. See [STORE_JUSTIFICATION.md](file:///c:/Users/anand/WebSecurity-Scanner-Git/TrustLink-v1/STORE_JUSTIFICATION.md) for the complete Chrome Web Store review justification.
-Remote Config only ever receives TrustLink's own install identifier (for Firebase's per-app scoping) —
-never the sites you visit or check. Firebase sync (if you enable it, see section 4) only ever
-carries the four reliability fields, also never the sites you've visited.
+**Privacy by design:** No browsing history, page content, or personally identifiable data is collected or transmitted. All heuristic risk analysis and threat intelligence matching occur 100% locally on your device. See [STORE_JUSTIFICATION.md](STORE_JUSTIFICATION.md) for the complete Chrome Web Store review justification. The only external identifier transmitted is an anonymous, randomly generated Firebase Installation ID (FID), used strictly for client-side Firebase Remote Config parameter delivery and template scoping. This FID is completely unlinked from user identity, browsing history, visited URLs, or Google accounts. If Firebase sync is enabled, it only ever mirrors the non-sensitive reliability fields (manual scan quotas and self-confirmation timestamp), never visited sites or search queries.
 
 ## Testing
 

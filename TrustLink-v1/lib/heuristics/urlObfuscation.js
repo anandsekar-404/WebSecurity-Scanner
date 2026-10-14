@@ -34,7 +34,8 @@ export function detect(ctx, scores = defaultScores) {
     });
   }
 
-  if (ctx.host.split("-").length - 1 >= HYPHEN_THRESHOLD) {
+  const plain = ctx.labels.filter((l) => !l.startsWith("xn--")).join(".");
+  if (plain.split("-").length - 1 >= HYPHEN_THRESHOLD) {
     findings.push({
       id: "hyphenated", level: "medium", title: "Heavily hyphenated domain",
       detail: "Multiple hyphens in a domain name are common in disposable, auto-generated, or look-alike domains.",

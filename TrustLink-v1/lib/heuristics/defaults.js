@@ -72,6 +72,12 @@ export const DEFAULT_LISTS = {
     "netflix.com", "facebook.com", "instagram.com", "coinbase.com", "chase.com",
     "wellsfargo.com", "bankofamerica.com", "dropbox.com", "linkedin.com",
     "github.com", "outlook.com", "office.com", "icloud.com",
+    // Regional and global banks
+    "barclays.co.uk", "hsbc.com", "lloydsbank.com", "santander.com",
+    "natwest.com", "rbs.co.uk", "citi.com", "capitalone.com",
+    "hdfcbank.com", "icicibank.com", "sbi.co.in", "axisbank.com",
+    "cba.com.au", "nab.com.au", "westpac.com.au", "anz.com.au",
+    "rbcroyalbank.com", "td.com", "scotiabank.com", "bmo.com",
   ],
   suspiciousTlds: [
     "zip", "mov", "top", "xyz", "click", "link", "gq", "cf", "tk", "ml", "ga",

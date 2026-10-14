@@ -50,8 +50,9 @@ This document contains the official Single Purpose statement and permission just
 ## 5. Privacy Policy Compliance Summary
 
 - **Personal Data Collected:** None.
-- **Browsing History Stored Remotely:** None.
-- **External Network Calls:** Limited to:
+- **Browsing History Stored Remotely:** None. Visited URLs and navigation targets are analyzed 100% locally on the user's device and are never logged or transmitted.
+- **Client Identifiers:** The only identifier transmitted is an anonymous, randomly generated Firebase Installation ID (FID) per installation, used strictly to fetch client-side Remote Config parameter bundles. The FID is never associated with personal identity, user profiles, Google accounts, or browsing history.
+- **External Network Calls:** Strictly limited to:
   1. Scheduled bulk download of the OpenPhish community threat feed (cached in local IndexedDB).
   2. Optional Firebase Remote Config fetch for detection tuning (cached in `chrome.storage.local`).
 - **No Intrusive Probing:** TrustLink performs read-only, passive analysis without port scanning, credential stuffing, or intrusive server probing.

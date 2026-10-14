@@ -60,16 +60,22 @@ export const SHARED_HOST_EXCLUSIONS = new Set([
   "github.io", "gitlab.io", "pages.dev", "vercel.app", "netlify.app",
   "web.app", "firebaseapp.com", "azurewebsites.net", "herokuapp.com",
   "glitch.me", "repl.co", "workers.dev", "render.com", "onrender.com",
+  "supabase.co", "fly.dev", "railway.app", "notion.site", "surge.sh",
+  "pantheonsite.io", "myshopify.com", "carrd.co", "webflow.io",
   // Cloud storage, forms & docs
   "blob.core.windows.net", "s3.amazonaws.com", "amazonaws.com",
   "google.com", "docs.google.com", "drive.google.com", "sites.google.com",
   "forms.gle", "sharepoint.com", "dropbox.com", "onedrive.live.com",
+  "typeform.com", "surveymonkey.com", "airtable.com", "tally.so",
+  // CDN & Content Delivery
+  "cloudfront.net", "fastly.net", "cdn77.org",
   // URL shorteners & redirection
   "bit.ly", "tinyurl.com", "t.co", "cutt.ly", "is.gd", "rebrand.ly", "ow.ly",
   // Tunnels
   "ngrok.io", "ngrok-free.app", "loca.lt", "pagekite.me",
   // Free website builders
   "000webhostapp.com", "wixsite.com", "weebly.com", "wordpress.com", "blogspot.com",
+  "zendesk.com", "hubspotpagebuilder.com",
 ]);
 
 export function isSharedHost(host) {
@@ -117,7 +123,7 @@ export function registrableDomain(host) {
  * detector, so each URL is only parsed once per analysis.
  */
 export function buildUrlContext(url) {
-  const host = url.hostname.toLowerCase();
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
   const path = `${url.pathname}${url.search}`.toLowerCase();
   const full = `${host}${path}`;
   const labels = host.split(".");

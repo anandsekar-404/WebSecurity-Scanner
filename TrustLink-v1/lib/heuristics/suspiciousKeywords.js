@@ -9,7 +9,8 @@ export const defaultScore = 16;
 export const minMatches = 2;
 
 export function detect(ctx, score, keywordList, threshold = minMatches) {
-  const matched = keywordList.filter((t) => ctx.full.includes(t));
+  const tokens = new Set(ctx.full.split(/[^a-z0-9]+/));
+  const matched = keywordList.filter((k) => (k.includes("-") ? ctx.full.includes(k) : tokens.has(k)));
   if (matched.length < threshold) return null;
   return {
     id: "phishing-words", level: "medium", title: "Sensitive-action wording in the address",

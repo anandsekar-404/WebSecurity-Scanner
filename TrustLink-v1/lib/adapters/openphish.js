@@ -124,7 +124,16 @@ export async function updateOpenPhishFeed(threatDb, { force = false, minInterval
       };
     }
 
-    // Generate domain-level indicators for non-shared hosts to catch phishing kits rotated to new paths
+    // Generate domain-level indicators for non-shared hosts to catch phishing kits rotated to new paths.
+    // Requires stronger evidence: multiple reported paths on the host (>=3) or a root phishing landing page ("/").
+    const hostCount = new Map();
+    for (const e of entries) {
+      try {
+        const h = new URL(e.indicator).hostname.toLowerCase();
+        hostCount.set(h, (hostCount.get(h) || 0) + 1);
+      } catch {}
+    }
+
     const seenDomains = new Set();
     const domainEntries = [];
     for (const entry of entries) {
@@ -132,14 +141,16 @@ export async function updateOpenPhishFeed(threatDb, { force = false, minInterval
         const u = new URL(entry.indicator);
         const host = u.hostname.toLowerCase();
         if (host && !isSharedHost(host) && !seenDomains.has(host)) {
-          seenDomains.add(host);
-          domainEntries.push({
-            indicator: `domain:${host}`,
-            type: "phishing_domain",
-            source: SOURCE_NAME,
-            last_updated: nowIso,
-            status: "active",
-          });
+          if ((hostCount.get(host) || 0) >= 3 || u.pathname === "/" || u.pathname === "") {
+            seenDomains.add(host);
+            domainEntries.push({
+              indicator: `domain:${host}`,
+              type: "phishing_domain",
+              source: SOURCE_NAME,
+              last_updated: nowIso,
+              status: "active",
+            });
+          }
         }
       } catch {}
     }

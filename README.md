@@ -120,6 +120,7 @@ TrustLink is architected from the ground up to respect user privacy:
 
 - **100% Local Evaluation:** All heuristic evaluations and threat lookups occur locally on the user's machine.
 - **Zero Browsing History Uploads:** URLs, visited domains, search queries, and form inputs are **never** transmitted to any remote server.
+- **Anonymous Identifiers Only:** The only identifier transmitted is an anonymous, randomly generated Firebase Installation ID (FID) used solely for client-side Remote Config parameter delivery. It is never linked to user identity, Google accounts, or browsing history.
 - **Passive Inspection:** Zero port scanning, automated exploitation, brute-forcing, or disruptive network probing.
 - **Privacy-Preserving Probes:** Query strings and hash fragments are stripped before optional active HEAD checks.
 - **Least Privilege:** Declarative Manifest V3 permissions strictly scoped and documented in [`TrustLink-v1/STORE_JUSTIFICATION.md`](TrustLink-v1/STORE_JUSTIFICATION.md).

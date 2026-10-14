@@ -72,7 +72,8 @@ export function runAll(ctx, config) {
       ctx,
       w.detection_brand_impersonation_score,
       config.lists.protectedBrands,
-      new Set(config.lists.suspiciousTlds)
+      new Set(config.lists.suspiciousTlds),
+      config.lists.suspiciousKeywords
     );
     if (f) { findings.push(f); impersonationFound = true; }
   }

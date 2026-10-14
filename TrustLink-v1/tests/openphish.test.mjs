@@ -185,6 +185,8 @@ async function run() {
     const db = createThreatDb();
     const urlsWithShared = [
       ...Array.from({ length: 50 }, (_, i) => `https://isolated-phish-${i}.example.org/login`),
+      "https://isolated-phish-1.example.org/verify",
+      "https://isolated-phish-1.example.org/session",
       "https://attacker.github.io/phishing-page",
       "https://docs.google.com/forms/d/e/12345/viewform",
     ];

@@ -142,7 +142,11 @@ async function checkAndBlockNavigation(tabId, url) {
     }
   }
 
-  if (result.tone !== "danger" && result.tone !== "critical") return;
+  const isConfirmedThreat = result.tone === "critical";
+  const highSignals = (result.findings || []).filter((f) => f.level === "high");
+  const isHeuristicDanger = result.score >= 75 || highSignals.length >= 2;
+
+  if (!isConfirmedThreat && !isHeuristicDanger) return;
 
   const blockId = await storeBlockReason({
     url,

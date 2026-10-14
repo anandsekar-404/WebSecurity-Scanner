@@ -36,30 +36,97 @@ async function checkThreatDatabase(config, urlString) {
   }
 }
 
-// Passive header capture for main-frame requests so TrustLink reads the
-// browser's real response without issuing a duplicate network request.
-const tabHeadersCache = new Map();
+// Passive header capture and redirect tracking that survives service worker sleep.
+const KEEP_HEADERS = [
+  "strict-transport-security",
+  "content-security-policy",
+  "x-frame-options",
+  "x-content-type-options",
+  "referrer-policy",
+  "permissions-policy",
+  "feature-policy",
+];
 
-if (chrome.webRequest?.onHeadersReceived) {
-  chrome.webRequest.onHeadersReceived.addListener(
+const memorySessionStore = new Map();
+
+async function getSessionData(key) {
+  if (typeof chrome !== "undefined" && chrome.storage?.session?.get) {
+    return new Promise((resolve) => {
+      chrome.storage.session.get(key, (res) => resolve(res?.[key] || null));
+    });
+  }
+  return memorySessionStore.get(key) || null;
+}
+
+async function setSessionData(key, value) {
+  if (typeof chrome !== "undefined" && chrome.storage?.session?.set) {
+    return new Promise((resolve) => {
+      chrome.storage.session.set({ [key]: value }, resolve);
+    });
+  }
+  memorySessionStore.set(key, value);
+}
+
+async function removeSessionData(keys) {
+  const arr = Array.isArray(keys) ? keys : [keys];
+  if (typeof chrome !== "undefined" && chrome.storage?.session?.remove) {
+    return new Promise((resolve) => {
+      chrome.storage.session.remove(arr, resolve);
+    });
+  }
+  for (const k of arr) memorySessionStore.delete(k);
+}
+
+if (typeof chrome !== "undefined" && chrome.webNavigation?.onBeforeNavigate) {
+  chrome.webNavigation.onBeforeNavigate.addListener((details) => {
+    if (details.frameId === 0 && details.tabId >= 0) {
+      removeSessionData(`tl_origin_${details.tabId}`).catch(() => {});
+    }
+  });
+}
+
+if (typeof chrome !== "undefined" && chrome.webRequest?.onBeforeRedirect) {
+  chrome.webRequest.onBeforeRedirect.addListener(
     (details) => {
       if (details.type === "main_frame" && details.tabId >= 0) {
-        tabHeadersCache.set(details.tabId, {
-          url: details.url,
-          statusCode: details.statusCode,
-          headers: details.responseHeaders || [],
-          time: Date.now(),
-        });
+        getSessionData(`tl_origin_${details.tabId}`).then((origin) => {
+          if (!origin) {
+            setSessionData(`tl_origin_${details.tabId}`, details.url).catch(() => {});
+          }
+        }).catch(() => {});
       }
+    },
+    { urls: ["http://*/*", "https://*/*"], types: ["main_frame"] }
+  );
+}
+
+if (typeof chrome !== "undefined" && chrome.webRequest?.onHeadersReceived) {
+  chrome.webRequest.onHeadersReceived.addListener(
+    async (details) => {
+      if (details.type !== "main_frame" || details.tabId < 0) return;
+      const headers = {};
+      for (const h of details.responseHeaders || []) {
+        const n = h.name?.toLowerCase();
+        if (KEEP_HEADERS.includes(n)) {
+          headers[n] = h.value || "1";
+        }
+      }
+      const origin = await getSessionData(`tl_origin_${details.tabId}`).catch(() => null);
+      await setSessionData(`tl_hdr_${details.tabId}`, {
+        url: details.url,
+        origin,
+        statusCode: details.statusCode,
+        headers,
+      }).catch(() => {});
     },
     { urls: ["http://*/*", "https://*/*"], types: ["main_frame"] },
     ["responseHeaders"]
   );
 }
 
-if (chrome.tabs?.onRemoved) {
+if (typeof chrome !== "undefined" && chrome.tabs?.onRemoved) {
   chrome.tabs.onRemoved.addListener((tabId) => {
-    tabHeadersCache.delete(tabId);
+    removeSessionData([`tl_hdr_${tabId}`, `tl_origin_${tabId}`]).catch(() => {});
   });
 }
 
@@ -82,24 +149,21 @@ async function inspect(rawUrl, { isPasted = false, deepCheck = false, tabId = nu
   const base = analyzeUrl(urlString, config);
   let score = base.score;
   let findings = [...base.findings];
+  let cachedHeaders = null;
 
   if (base.safeToFetch) {
-    const cachedHeaders = tabId != null ? tabHeadersCache.get(tabId) : null;
+    cachedHeaders = tabId != null ? await getSessionData(`tl_hdr_${tabId}`).catch(() => null) : null;
 
     if (cachedHeaders && cachedHeaders.headers) {
-      // Passive header check: read from the browser's own main-frame request (zero duplicate requests)
-      const headerMap = new Map();
-      for (const h of cachedHeaders.headers) {
-        if (h.name) headerMap.set(h.name.toLowerCase(), h.value);
-      }
+      // Passive header check: read from session storage (zero duplicate requests, survives SW sleep)
       const passiveResponse = {
         url: cachedHeaders.url || urlString,
-        status: cachedHeaders.statusCode,
+        status: cachedHeaders.statusCode || 200,
         headers: {
-          get: (name) => headerMap.get(name.toLowerCase()) || null,
+          get: (name) => cachedHeaders.headers[name.toLowerCase()] || null,
         },
       };
-      const headerCheck = analyzeResponse(urlString, passiveResponse, config);
+      const headerCheck = analyzeResponse(cachedHeaders.origin || urlString, passiveResponse, config);
       score += headerCheck.scoreDelta;
       findings = [...findings, ...headerCheck.findings];
     } else if (deepCheck) {
@@ -156,6 +220,7 @@ async function inspect(rawUrl, { isPasted = false, deepCheck = false, tabId = nu
     url: urlString,
     domain: base.host,
     score: finalScore,
+    redirected: Boolean(cachedHeaders?.origin),
     ...grade(finalScore),
     findings,
     checkedAt: new Date().toISOString(),

@@ -36,6 +36,20 @@
     return p.length <= 2 ? clean : p.slice(-2).join(".");
   }
 
+  const KNOWN_IDPS = new Set([
+    "accounts.google.com",
+    "login.microsoftonline.com",
+    "appleid.apple.com",
+    "auth0.com",
+    "okta.com",
+    "onelogin.com",
+    "id.atlassian.com",
+    "github.com",
+    "facebook.com",
+    "amazon.com",
+    "auth.pingidentity.com",
+  ]);
+
   function checkCredentialGuard(scanResult) {
     if (!scanResult || dismissed) return;
     const passwordInputs = Array.from(document.querySelectorAll('input[type="password"]'));
@@ -52,6 +66,30 @@
             const currentReg = registrableDomain(location.hostname);
             const targetReg = registrableDomain(targetUrl.hostname);
             if (targetReg && currentReg && targetReg !== currentReg) {
+              const isKnownIdp =
+                KNOWN_IDPS.has(targetUrl.hostname) ||
+                Array.from(KNOWN_IDPS).some((idp) => targetUrl.hostname.endsWith(`.${idp}`));
+
+              if (isKnownIdp) {
+                injectBanner({
+                  tone: "warning",
+                  label: "External Identity Provider",
+                  score: Math.min(Math.max(scanResult.score || 0, 35), 45),
+                  domain: location.hostname,
+                  action: `This login form submits credentials to a recognized identity provider (${targetUrl.hostname}). Verify that you intended to sign in with this third-party provider.`,
+                  findings: [
+                    {
+                      id: "external-idp-form",
+                      level: "medium",
+                      title: "Form submits to external identity provider",
+                      detail: `This page posts login credentials to ${targetUrl.hostname}. This is common for federated single sign-on (SSO), but verify the site's legitimacy.`,
+                    },
+                    ...(scanResult.findings || []),
+                  ],
+                });
+                return;
+              }
+
               const findings = [
                 {
                   id: "cross-domain-credential-form",
