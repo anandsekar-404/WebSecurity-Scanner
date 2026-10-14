@@ -208,7 +208,7 @@ confirmed threat-database match — see the CRITICAL tier below.
 | `detection_suspicious_tld_score` | Number | 10 | Domain uses a frequently-abused TLD |
 | `detection_suspicious_keyword_score` | Number | 16 | 2+ sensitive-action keywords in the URL |
 | `detection_excessive_subdomain_score` | Number | 12 | 5+ label subdomain chain |
-| `detection_userinfo_score` | Number | 34 | `user@host` misleading-URL trick |
+| `detection_userinfo_score` | Number | 60 | `user@host` misleading-URL trick |
 | `detection_nonstandard_port_score` | Number | 8 | Non-standard port |
 | `detection_hyphenated_domain_score` | Number | 12 | Heavily hyphenated domain |
 | `detection_long_url_score` | Number | 6 | Very long hostname |
@@ -347,9 +347,8 @@ small CybroatriX footer credit.
 
 **Privacy by design:** No browsing history, page content, or personal data is collected beyond
 what's described above. See [STORE_JUSTIFICATION.md](file:///c:/Users/anand/WebSecurity-Scanner-Git/TrustLink-v1/STORE_JUSTIFICATION.md) for the complete Chrome Web Store review justification.
-what's described above. Remote Config only ever receives TrustLink's own
-install identifier (for Firebase's per-app scoping) — never the sites you
-visit or check. Firebase sync (if you enable it, see section 4) only ever
+Remote Config only ever receives TrustLink's own install identifier (for Firebase's per-app scoping) —
+never the sites you visit or check. Firebase sync (if you enable it, see section 4) only ever
 carries the four reliability fields, also never the sites you've visited.
 
 ## Testing
@@ -370,6 +369,8 @@ node tests/openphish.test.mjs         # feed download/parse/validate/publish,
                                        # malformed/duplicate/empty feeds, failed-update safety
 node tests/threatDb.test.mjs          # local threat database: exact-match lookup,
                                        # per-source atomic replace, metadata accuracy
+node tests/securityHardening.test.mjs # message-sender authorization checks,
+                                       # approveContinue tamper resistance
 ```
 
 Or run everything at once:
@@ -432,6 +433,7 @@ lib/adapters/openphish.js    OpenPhish community feed downloader/validator
 lib/adapters/phishtank.js    Documented no-op — see Threat Intelligence status above
 lib/adapters/urlhaus.js      Bring-your-own-key adapter, disabled by default
 firestore.rules              Firestore security rules to paste into your project
+STORE_JUSTIFICATION.md       Chrome Web Store permission review & justification documentation
 tests/*.test.mjs             Full test suite (run with plain `node`, see Testing above)
 icon16/32/48/128.png         TrustLink logo
 cybroatrix-logo.png          Footer credit mark
