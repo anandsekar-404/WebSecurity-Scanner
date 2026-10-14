@@ -20,7 +20,7 @@ export const DEFAULT_WEIGHTS = {
   detection_suspicious_tld_score: 10,
   detection_suspicious_keyword_score: 16,
   detection_excessive_subdomain_score: 12,
-  detection_userinfo_score: 34,
+  detection_userinfo_score: 60,
   detection_nonstandard_port_score: 8,
   detection_hyphenated_domain_score: 12,
   detection_long_url_score: 6,

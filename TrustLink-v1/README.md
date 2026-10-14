@@ -340,18 +340,13 @@ small CybroatriX footer credit.
 
 | Permission | Why it's needed |
 |---|---|
-| `activeTab` / `tabs` | Read the current tab's URL; let "Go back to safety" navigate it. |
-| `storage` | `chrome.storage.local` for all reliability state, the Remote Config cache, and Firebase Installations credentials (see below) — plus an in-memory Map in the background service worker for block reasons (`lib/blocking.js`). |
-| `webNavigation` | Lets `lib/blocking.js` detect and pre-empt dangerous navigations before the page loads. |
-| `host_permissions` (`http`/`https`) | The passive `HEAD` request used for header checks, the on-page banner, the OpenPhish feed download, and the Firebase REST calls. |
+| `storage` | `chrome.storage.local` for offline reliability state and Remote Config caches, plus `chrome.storage.session` for transient block and approval tokens across background service worker lifecycles. |
+| `webNavigation` | Lets `lib/blocking.js` detect and pre-empt dangerous navigations (`onBeforeNavigate` and `onCommitted` server-side redirects) before the page loads. |
+| `webRequest` | Passive, non-blocking `onHeadersReceived` listener on main-frame requests to read security headers directly from the real browser navigation response, eliminating duplicate network requests. |
+| `host_permissions` (`http`/`https`) | Allows the content script to run on visited pages for credential harvesting protection, the pre-navigation blocker to inspect destination URLs, the OpenPhish threat feed download, and optional opt-in deep header checks. |
 
-**V2 added zero new permissions.** The existing `https://*/*` host
-permission already covers every new destination (OpenPhish, Firebase
-Installations, Firebase Remote Config) — no manifest change beyond the
-version bump was needed, and IndexedDB (the local threat database) doesn't
-require a permission at all.
-
-No browsing history, page content, or personal data is collected beyond
+**Privacy by design:** No browsing history, page content, or personal data is collected beyond
+what's described above. See [STORE_JUSTIFICATION.md](file:///c:/Users/anand/WebSecurity-Scanner-Git/TrustLink-v1/STORE_JUSTIFICATION.md) for the complete Chrome Web Store review justification.
 what's described above. Remote Config only ever receives TrustLink's own
 install identifier (for Firebase's per-app scoping) — never the sites you
 visit or check. Firebase sync (if you enable it, see section 4) only ever

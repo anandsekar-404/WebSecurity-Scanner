@@ -36,15 +36,42 @@ async function checkThreatDatabase(config, urlString) {
   }
 }
 
+// Passive header capture for main-frame requests so TrustLink reads the
+// browser's real response without issuing a duplicate network request.
+const tabHeadersCache = new Map();
+
+if (chrome.webRequest?.onHeadersReceived) {
+  chrome.webRequest.onHeadersReceived.addListener(
+    (details) => {
+      if (details.type === "main_frame" && details.tabId >= 0) {
+        tabHeadersCache.set(details.tabId, {
+          url: details.url,
+          statusCode: details.statusCode,
+          headers: details.responseHeaders || [],
+          time: Date.now(),
+        });
+      }
+    },
+    { urls: ["http://*/*", "https://*/*"], types: ["main_frame"] },
+    ["responseHeaders"]
+  );
+}
+
+if (chrome.tabs?.onRemoved) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    tabHeadersCache.delete(tabId);
+  });
+}
+
 function isExtensionSender(sender) {
   if (!sender || sender.id !== chrome.runtime.id) return false;
   const extPrefix = chrome.runtime.getURL("");
   return typeof sender.url === "string" && sender.url.startsWith(extPrefix);
 }
 
-async function inspect(rawUrl, { isPasted = false, deepCheck = false } = {}) {
+async function inspect(rawUrl, { isPasted = false, deepCheck = false, tabId = null } = {}) {
   const urlString = normalizeUrl(rawUrl);
-  const key = `${urlString}::pasted=${isPasted}::deep=${deepCheck}`;
+  const key = `${urlString}::pasted=${isPasted}::deep=${deepCheck}::tab=${tabId || ""}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.time < CACHE_MS) return hit.result;
 
@@ -57,33 +84,70 @@ async function inspect(rawUrl, { isPasted = false, deepCheck = false } = {}) {
   let findings = [...base.findings];
 
   if (base.safeToFetch) {
-    if (isPasted && !deepCheck) {
-      findings.push({
-        id: "passive-only",
-        level: "good",
-        title: "Passive URL inspection (privacy-first)",
-        detail: "This pasted address was checked locally with heuristics and threat feeds without contacting the server. Deep live header checks are opt-in.",
-      });
-    } else {
+    const cachedHeaders = tabId != null ? tabHeadersCache.get(tabId) : null;
+
+    if (cachedHeaders && cachedHeaders.headers) {
+      // Passive header check: read from the browser's own main-frame request (zero duplicate requests)
+      const headerMap = new Map();
+      for (const h of cachedHeaders.headers) {
+        if (h.name) headerMap.set(h.name.toLowerCase(), h.value);
+      }
+      const passiveResponse = {
+        url: cachedHeaders.url || urlString,
+        status: cachedHeaders.statusCode,
+        headers: {
+          get: (name) => headerMap.get(name.toLowerCase()) || null,
+        },
+      };
+      const headerCheck = analyzeResponse(urlString, passiveResponse, config);
+      score += headerCheck.scoreDelta;
+      findings = [...findings, ...headerCheck.findings];
+    } else if (deepCheck) {
+      // Opt-in active deep check: strip query string and fragment for privacy
+      let probeUrl = urlString;
       try {
-        const response = await fetch(urlString, {
+        const parsed = new URL(urlString);
+        parsed.search = "";
+        parsed.hash = "";
+        probeUrl = parsed.toString();
+      } catch {}
+
+      try {
+        const response = await fetch(probeUrl, {
           method: "HEAD",
           redirect: "follow",
           cache: "no-store",
           credentials: "omit",
           signal: AbortSignal.timeout(8000),
         });
-        const headerCheck = analyzeResponse(urlString, response, config);
-        score += headerCheck.scoreDelta;
-        findings = [...findings, ...headerCheck.findings];
+
+        if (response.status === 403 || response.status === 405) {
+          findings.push({
+            id: "header-check-unavailable",
+            level: "low",
+            title: "Header check unavailable",
+            detail: `The server returned HTTP ${response.status} to a HEAD probe. Header-based signals are unavailable; URL checks remain active.`,
+          });
+        } else {
+          const headerCheck = analyzeResponse(urlString, response, config);
+          score += headerCheck.scoreDelta;
+          findings = [...findings, ...headerCheck.findings];
+        }
       } catch {
         findings.push({
           id: "header-check-unavailable",
           level: "low",
           title: "Header check unavailable",
-          detail: "This site didn't respond to a lightweight background request within 8 seconds, so header-based signals aren't available. URL-based checks are still shown above.",
+          detail: "This site didn't respond to a lightweight probe within 8 seconds, so header-based signals aren't available. URL-based checks are still shown above.",
         });
       }
+    } else if (isPasted) {
+      findings.push({
+        id: "passive-only",
+        level: "good",
+        title: "Passive URL inspection (privacy-first)",
+        detail: "This pasted address was checked locally with heuristics and threat feeds without contacting the server. Deep live header checks are opt-in.",
+      });
     }
   }
 
@@ -162,10 +226,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           respond({ stopped: true });
           return;
         }
-        const tabId = message.updateBadge ? (message.tabId ?? sender.tab?.id ?? null) : null;
-        inspect(message.url, { isPasted: Boolean(message.isPasted), deepCheck: Boolean(message.deepCheck) })
+        const resolvedTabId = message.tabId ?? sender.tab?.id ?? null;
+        const badgeTabId = message.updateBadge ? resolvedTabId : null;
+        inspect(message.url, {
+          isPasted: Boolean(message.isPasted),
+          deepCheck: Boolean(message.deepCheck),
+          tabId: resolvedTabId,
+        })
           .then((result) => {
-            setBadge(tabId, result);
+            setBadge(badgeTabId, result);
             respond(result);
           })
           .catch((error) => respond({ error: error.message }));
@@ -185,14 +254,16 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
             respond({ gated: true, reason: gate.reason });
             return;
           }
-          const tabId = message.updateBadge ? (message.tabId ?? sender.tab?.id ?? null) : null;
+          const resolvedTabId = message.tabId ?? sender.tab?.id ?? null;
+          const badgeTabId = message.updateBadge ? resolvedTabId : null;
           try {
             const result = await inspect(message.url, {
               isPasted: Boolean(message.isPasted),
               deepCheck: Boolean(message.deepCheck),
+              tabId: resolvedTabId,
             });
             await recordManualScanCompleted();
-            setBadge(tabId, result);
+            setBadge(badgeTabId, result);
             respond({ gated: false, ...result });
           } catch (error) {
             respond({ error: error.message });

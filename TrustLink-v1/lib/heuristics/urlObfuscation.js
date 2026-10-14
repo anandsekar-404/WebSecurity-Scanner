@@ -6,7 +6,7 @@
 export const key = "urlObfuscation";
 export const configFlag = "feature_url_obfuscation";
 export const defaultScores = {
-  userinfo: 34,
+  userinfo: 60,
   nonstandardPort: 8,
   hyphenated: 12,
   longHost: 6,

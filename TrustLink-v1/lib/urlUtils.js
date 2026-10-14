@@ -82,9 +82,34 @@ export function isSharedHost(host) {
   return false;
 }
 
+export const MULTI_TLD = new Set([
+  "co.uk", "org.uk", "me.uk", "ltd.uk", "plc.uk", "net.uk", "sch.uk", "ac.uk", "gov.uk",
+  "co.in", "net.in", "org.in", "gen.in", "firm.in", "ind.in", "nic.in", "ac.in", "edu.in", "res.in", "gov.in", "mil.in",
+  "com.au", "net.au", "org.au", "edu.au", "gov.au", "asn.au", "id.au",
+  "co.jp", "ne.jp", "or.jp", "ac.jp", "ed.jp", "go.jp", "gr.jp", "lg.jp",
+  "com.br", "net.br", "org.br", "gov.br", "edu.br",
+  "co.nz", "net.nz", "org.nz", "govt.nz", "ac.nz",
+  "co.za", "net.za", "org.za", "gov.za", "ac.za",
+  "com.sg", "net.sg", "org.sg", "gov.sg", "edu.sg",
+  "com.mx", "org.mx", "gob.mx", "edu.mx",
+  "co.kr", "ne.kr", "or.kr", "re.kr", "pe.kr", "go.kr", "mil.kr", "ac.kr",
+  "com.tr", "net.tr", "org.tr", "gov.tr", "edu.tr",
+  "com.tw", "net.tw", "org.tw", "gov.tw", "edu.tw",
+  "com.hk", "net.hk", "org.hk", "gov.hk", "edu.hk",
+  "com.my", "net.my", "org.my", "gov.my", "edu.my",
+  "com.ar", "net.ar", "org.ar", "gob.ar", "edu.ar",
+  "com.cn", "net.cn", "org.cn", "gov.cn", "edu.cn",
+  "com.co", "net.co", "org.co", "gov.co", "edu.co",
+  "com.ng", "net.ng", "org.ng", "gov.ng", "edu.ng",
+  "com.pk", "net.pk", "org.pk", "gov.pk", "edu.pk",
+]);
+
 export function registrableDomain(host) {
-  const parts = host.split(".");
-  return parts.length <= 2 ? host : parts.slice(-2).join(".");
+  if (!host) return "";
+  const clean = host.replace(/^\[|\]$/g, "").trim().toLowerCase();
+  const p = clean.split(".");
+  if (p.length >= 3 && MULTI_TLD.has(p.slice(-2).join("."))) return p.slice(-3).join(".");
+  return p.length <= 2 ? clean : p.slice(-2).join(".");
 }
 
 /**

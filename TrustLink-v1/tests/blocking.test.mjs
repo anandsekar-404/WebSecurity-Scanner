@@ -127,6 +127,36 @@ async function run() {
   await new Promise((r) => setTimeout(r, 20));
   assert(globalThis.__lastTabUpdate?.tabId === 10, "new path on a known phishing domain blocks via domain-level matching");
 
+  console.log("\nScenario: probe URLs in pre-navigation blocking");
+  // Expected-safe: must NOT trigger tabs.update redirection
+  const safeProbeUrls = [
+    "https://google.co.in",
+    "https://amazon.in",
+    "https://purchase.com",
+  ];
+  for (const [i, url] of safeProbeUrls.entries()) {
+    globalThis.__lastTabUpdate = null;
+    await listener({ frameId: 0, tabId: 100 + i, url });
+    await new Promise((r) => setTimeout(r, 20));
+    assert(globalThis.__lastTabUpdate === null, `probe URL ${url} is not blocked (safe)`);
+  }
+
+  // Expected-danger: must trigger tabs.update redirection to blocked.html
+  const dangerProbeUrls = [
+    "https://paypal.secure-login.xyz",
+    "https://google.com@evil.example",
+  ];
+  for (const [i, url] of dangerProbeUrls.entries()) {
+    globalThis.__lastTabUpdate = null;
+    await listener({ frameId: 0, tabId: 200 + i, url });
+    await new Promise((r) => setTimeout(r, 20));
+    assert(
+      globalThis.__lastTabUpdate?.tabId === 200 + i &&
+      globalThis.__lastTabUpdate?.info.url.startsWith("chrome-extension://fake-id/blocked.html?id="),
+      `probe URL ${url} is blocked before navigation (danger)`
+    );
+  }
+
   console.log("\nALL BLOCKING TESTS PASSED");
 }
 

@@ -68,7 +68,12 @@ export function runAll(ctx, config) {
   // double-counting the same domain under two different findings.
   let impersonationFound = false;
   if (isEnabled(config, brandImpersonation.configFlag)) {
-    const f = brandImpersonation.detect(ctx, w.detection_brand_impersonation_score, config.lists.protectedBrands);
+    const f = brandImpersonation.detect(
+      ctx,
+      w.detection_brand_impersonation_score,
+      config.lists.protectedBrands,
+      new Set(config.lists.suspiciousTlds)
+    );
     if (f) { findings.push(f); impersonationFound = true; }
   }
   if (impersonationFound) {

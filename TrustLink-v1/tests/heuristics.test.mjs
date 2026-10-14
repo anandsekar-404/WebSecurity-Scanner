@@ -120,4 +120,44 @@ for (const addr of publicAddresses) {
   assert(isPrivateHost(addr) === false, `isPrivateHost("${addr}") is false (public)`);
 }
 
+console.log("\nScenario: registrableDomain multi-part ccTLD parsing");
+const { registrableDomain } = await import("../lib/urlUtils.js");
+assert(registrableDomain("google.co.in") === "google.co.in", "google.co.in registrableDomain is google.co.in");
+assert(registrableDomain("mail.google.co.in") === "google.co.in", "mail.google.co.in registrableDomain is google.co.in");
+assert(registrableDomain("amazon.in") === "amazon.in", "amazon.in registrableDomain is amazon.in");
+assert(registrableDomain("purchase.com") === "purchase.com", "purchase.com registrableDomain is purchase.com");
+assert(registrableDomain("service.co.uk") === "service.co.uk", "service.co.uk registrableDomain is service.co.uk");
+
+console.log("\nScenario: probe regression tests — false positive prevention & expected danger detection");
+const { grade } = await import("../analyzer.js");
+
+const safeProbeCases = [
+  "https://google.co.in",
+  "https://amazon.in",
+  "https://purchase.com",
+];
+
+for (const url of safeProbeCases) {
+  const result = analyzeUrl(url);
+  const verdict = grade(result.score);
+  assert(
+    result.score < 30 && verdict.tone === "safe",
+    `probe URL ${url} is expected-safe (score=${result.score}, tone=${verdict.tone})`
+  );
+}
+
+const dangerProbeCases = [
+  "https://paypal.secure-login.xyz",
+  "https://google.com@evil.example",
+];
+
+for (const url of dangerProbeCases) {
+  const result = analyzeUrl(url);
+  const verdict = grade(result.score);
+  assert(
+    result.score >= 60 && verdict.tone === "danger",
+    `probe URL ${url} is expected-block/danger (score=${result.score}, tone=${verdict.tone})`
+  );
+}
+
 console.log("\nALL HEURISTICS TESTS PASSED");

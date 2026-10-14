@@ -71,6 +71,28 @@ export function analyzeUrl(urlString, config = buildDefaultConfig()) {
   for (const f of detectorFindings) {
     score += f.score || 0;
   }
+
+  // Combination bonus: brand or look-alike signals combined with untrusted infrastructure
+  // (no HTTPS, raw IP, suspicious TLD, or credential keywords) are a hallmark of active phishing.
+  const hasBrandOrLookalike = detectorFindings.some(
+    (f) => f.id === "brand-impersonation" || f.id === "lookalike-domain" || f.id === "homograph"
+  );
+  const hasSuspiciousCompanion =
+    url.protocol !== "https:" ||
+    detectorFindings.some(
+      (f) => f.id === "ip-literal" || f.id === "abused-tld" || f.id === "phishing-words"
+    );
+
+  if (hasBrandOrLookalike && hasSuspiciousCompanion) {
+    score += 20;
+    findings.push({
+      id: "compound-phishing-signal",
+      level: "high",
+      title: "High-risk indicator combination",
+      detail: "This site pairs brand or look-alike indicators with suspicious infrastructure signals (such as an abused TLD, sensitive keywords, raw IP, or lack of encryption). This combination strongly correlates with active phishing attacks.",
+    });
+  }
+
   findings.push(...detectorFindings.map(({ score: _s, ...rest }) => rest)); // don't leak internal per-finding score into the UI-facing object
 
   return { score, findings, safeToFetch: true, host: ctx.host, isLocal: false };

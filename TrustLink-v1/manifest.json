@@ -3,10 +3,11 @@
   "name": "TrustLink",
   "version": "2.0.0",
   "description": "Verify the link. Protect the click. A passive, privacy-first risk assistant that scores any site 0-100 and explains exactly why.",
+  "minimum_chrome_version": "103",
   "permissions": [
-    "activeTab",
     "storage",
-    "webNavigation"
+    "webNavigation",
+    "webRequest"
   ],
   "host_permissions": [
     "http://*/*",

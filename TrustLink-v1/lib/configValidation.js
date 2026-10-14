@@ -12,7 +12,7 @@
 // This file has no side effects and does no I/O — pure validation, fully
 // unit-testable.
 
-const WEIGHT_RANGE = [5, 50]; // Detection weights cannot be zeroed out (floor: 5) or bloated (ceiling: 50)
+const WEIGHT_RANGE = [5, 65]; // Detection weights cannot be zeroed out (floor: 5) or bloated (ceiling: 65)
 const RISK_THRESHOLD_BOUNDS = {
   risk_low_threshold: [0, 40],
   risk_medium_threshold: [0, 60],
