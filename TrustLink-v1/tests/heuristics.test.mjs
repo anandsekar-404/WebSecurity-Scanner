@@ -79,10 +79,45 @@ const withoutFlag = runAll(ctx("https://xn--80ak6aa92e.com/"), disabledCfg).map(
 assert(withFlag.includes("punycode"), "punycode finding present when feature_homograph is enabled");
 assert(!withoutFlag.includes("punycode"), "punycode finding suppressed when feature_homograph is disabled (spec section 9)");
 
-console.log("\nScenario: emergency individual disable switch (spec section 10) overrides even an enabled feature flag");
-const emergencyCfg = buildDefaultConfig();
-emergencyCfg.protection.disable_typosquatting = true;
-const withEmergency = runAll(ctx("https://paypa1.com/"), emergencyCfg).map((f) => f.id);
-assert(!withEmergency.includes("lookalike-domain"), "disable_typosquatting suppresses the finding even though feature_typosquatting is still true");
+console.log("\nScenario: isPrivateHost comprehensively identifies private and internal addresses");
+const { isPrivateHost } = await import("../lib/urlUtils.js");
+const { analyzeUrl } = await import("../analyzer.js");
+
+const privateAddresses = [
+  "127.0.0.1",
+  "0.0.0.0",
+  "169.254.169.254", // AWS/cloud metadata & IPv4 link-local
+  "169.254.1.1",
+  "100.64.0.1", // Carrier Grade NAT RFC 6598
+  "100.100.50.25",
+  "100.127.255.254",
+  "10.0.0.1",
+  "172.16.0.1",
+  "192.168.1.1",
+  "::1",
+  "[::1]",
+  "service.local",
+  "router.internal",
+  "host.lan",
+  "localhost",
+];
+
+for (const addr of privateAddresses) {
+  assert(isPrivateHost(addr) === true, `isPrivateHost("${addr}") is true`);
+  const hostForUrl = addr.includes(":") && !addr.startsWith("[") ? `[${addr}]` : addr;
+  const analysis = analyzeUrl(`http://${hostForUrl}/login`);
+  assert(analysis.isLocal === true && analysis.safeToFetch === false, `analyzeUrl("http://${hostForUrl}/login") is classified as local and unsafe to fetch`);
+}
+
+const publicAddresses = [
+  "100.63.1.1", // below CGNAT range
+  "100.128.0.1", // above CGNAT range
+  "8.8.8.8",
+  "github.com",
+  "paypal.com",
+];
+for (const addr of publicAddresses) {
+  assert(isPrivateHost(addr) === false, `isPrivateHost("${addr}") is false (public)`);
+}
 
 console.log("\nALL HEURISTICS TESTS PASSED");

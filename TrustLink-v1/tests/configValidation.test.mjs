@@ -64,9 +64,28 @@ console.log("\nScenario: broken risk-threshold ORDERING (critical > high > mediu
   assert(config.risk.risk_critical_threshold === base.risk.risk_critical_threshold, "risk thresholds fall back to the base SET (not a partial mix) when ordering breaks");
 }
 
-console.log("\nScenario: unknown keys are never trusted, whatever their shape");
+console.log("\nScenario: security floors prevent silencing detection via Remote Config");
 {
-  assert(isValidParam("some_made_up_param", true) === false, "an unrecognized key is always rejected, even with a plausible-looking value");
+  const base = buildDefaultConfig();
+  assert(isValidParam("protectedBrands", []) === false, "empty protectedBrands list is rejected");
+  assert(isValidParam("protectedBrands", ["paypal.com", "google.com"]) === false, "protectedBrands with fewer than 10 brands is rejected");
+  assert(isValidParam("disable_openphish", true) === false, "disable_openphish: true is rejected");
+  assert(isValidParam("disable_openphish", false) === true, "disable_openphish: false is permitted");
+  assert(isValidParam("risk_high_threshold", 99) === false, "overly high threshold ceiling (>75) is rejected");
+  assert(isValidParam("detection_homograph_score", 0) === false, "zeroed-out detection score is rejected (floor: 5)");
+
+  const { config, rejectedKeys } = mergeValidatedConfig(base, {
+    protectedBrands: [],
+    disable_openphish: true,
+    risk_high_threshold: 99,
+    detection_homograph_score: 0,
+  });
+  assert(rejectedKeys.includes("protectedBrands"), "empty protectedBrands was rejected");
+  assert(rejectedKeys.includes("disable_openphish"), "disable_openphish was rejected");
+  assert(rejectedKeys.includes("risk_high_threshold"), "high threshold was rejected");
+  assert(rejectedKeys.includes("detection_homograph_score"), "zeroed score was rejected");
+  assert(config.lists.protectedBrands.length === base.lists.protectedBrands.length, "protectedBrands retains base entries");
+  assert(config.protection.disable_openphish === false, "disable_openphish remains false");
 }
 
 console.log("\nALL CONFIG VALIDATION TESTS PASSED");

@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -7,11 +7,39 @@ const dist = path.join(root, "dist");
 const placeholder = "__TRUSTLINK_FIREBASE_API_KEY__";
 const apiKey = process.env.TRUSTLINK_FIREBASE_API_KEY?.trim() || "";
 
+// Strict allowlist: only ship runtime extension files, exclude tests, scripts, rules, markdown, env files
+const SHIPPED_ALLOWLIST = [
+  "manifest.json",
+  "background.js",
+  "analyzer.js",
+  "content.js",
+  "popup.html",
+  "popup.js",
+  "popup.css",
+  "app.html",
+  "app.js",
+  "app.css",
+  "blocked.html",
+  "blocked.js",
+  "blocked.css",
+  "ui-core.js",
+  "cybroatrix-logo.png",
+  "icon16.png",
+  "icon32.png",
+  "icon48.png",
+  "icon128.png",
+  "lib",
+];
+
+await rm(dist, { recursive: true, force: true });
 await mkdir(dist, { recursive: true });
-for (const entry of await readdir(root, { withFileTypes: true })) {
-  if (["dist", ".git", "node_modules"].includes(entry.name)) continue;
-  await cp(path.join(root, entry.name), path.join(dist, entry.name), { recursive: true, force: true });
+
+for (const entry of SHIPPED_ALLOWLIST) {
+  const src = path.join(root, entry);
+  const dest = path.join(dist, entry);
+  await cp(src, dest, { recursive: true, force: true });
 }
+
 const configPath = path.join(dist, "lib", "firebase-config.js");
 let config = await readFile(configPath, "utf8");
 if (apiKey) config = config.replaceAll(placeholder, apiKey);

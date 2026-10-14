@@ -1,27 +1,130 @@
 (() => {
   if (window.top !== window) return; // only the top frame, never inside iframes
 
+  let lastScanResult = null;
+
+  function getRegistrableDomain(host) {
+    if (!host) return "";
+    const clean = host.toLowerCase().replace(/^\[|\]$/g, "");
+    const parts = clean.split(".");
+    if (parts.length <= 2) return clean;
+    const secondLast = parts[parts.length - 2];
+    if (["co", "com", "org", "net", "gov", "edu", "ac"].includes(secondLast) && parts.length >= 3) {
+      return parts.slice(-3).join(".");
+    }
+    return parts.slice(-2).join(".");
+  }
+
+  function checkCredentialGuard(scanResult) {
+    if (!scanResult) return;
+    const passwordInputs = Array.from(document.querySelectorAll('input[type="password"]'));
+    if (passwordInputs.length === 0) return;
+
+    // Check 1: Form submitting password to a different registrable domain
+    for (const input of passwordInputs) {
+      const form = input.closest("form");
+      if (form) {
+        const action = form.getAttribute("action");
+        if (action) {
+          try {
+            const targetUrl = new URL(action, location.href);
+            const currentReg = getRegistrableDomain(location.hostname);
+            const targetReg = getRegistrableDomain(targetUrl.hostname);
+            if (targetReg && currentReg && targetReg !== currentReg) {
+              const findings = [
+                {
+                  id: "cross-domain-credential-form",
+                  level: "high",
+                  title: "Password form submits to different domain",
+                  detail: `This login form submits credentials to "${targetUrl.hostname}", which is outside "${location.hostname}". This is a common phishing harvest technique.`,
+                },
+                ...(scanResult.findings || []),
+              ];
+              injectBanner({
+                tone: "danger",
+                label: "Off-Site Credential Form",
+                score: Math.max(scanResult.score || 0, 80),
+                domain: location.hostname,
+                action: `Do not enter passwords. This form sends credentials to an external domain (${targetUrl.hostname}).`,
+                findings,
+              });
+              return;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // Check 2: Password field on a page that scores warning or higher (score >= 30)
+    if (scanResult.score >= 30 || scanResult.tone === "warning" || scanResult.tone === "danger" || scanResult.tone === "critical") {
+      const findings = [
+        {
+          id: "credential-field-risk",
+          level: "high",
+          title: "Password field on suspicious site",
+          detail: `This site shows risk signals (score: ${scanResult.score}/100) and contains a password field. Review the risk signals before typing any credentials.`,
+        },
+        ...(scanResult.findings || []),
+      ];
+      injectBanner({
+        tone: scanResult.tone === "critical" ? "critical" : "danger",
+        label: scanResult.label === "Looks Safe" ? "Suspicious Login Form" : scanResult.label,
+        score: scanResult.score,
+        domain: scanResult.domain || location.hostname,
+        action: "Do not enter passwords on this page. Review the risk signals before continuing.",
+        findings,
+      });
+    }
+  }
+
   // This is the Automatic Scanner: it runs on every page load, independent
   // of Manual Page Scan's gating, and is skipped entirely while the user
   // has paused it via the "Stop Scanning" control.
   chrome.runtime.sendMessage({ type: "inspect", url: location.href, updateBadge: true, isAutomatic: true }).then((result) => {
     if (!result || result.error || result.stopped) return;
-    if (result.tone !== "danger" && result.tone !== "critical") return;
-    if (document.getElementById("trustlink-warning")) return;
-    injectBanner(result);
+    lastScanResult = result;
+
+    if (result.tone === "danger" || result.tone === "critical") {
+      injectBanner(result);
+    }
+
+    checkCredentialGuard(result);
   }).catch(() => {});
 
+  document.addEventListener("focusin", (e) => {
+    if (e.target && e.target.type === "password") {
+      checkCredentialGuard(lastScanResult);
+    }
+  }, true);
+
+  const observer = new MutationObserver(() => {
+    if (lastScanResult && document.querySelector('input[type="password"]')) {
+      checkCredentialGuard(lastScanResult);
+    }
+  });
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  } else {
+    document.addEventListener("DOMContentLoaded", () => {
+      if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
   function injectBanner(result) {
+    const existing = document.getElementById("trustlink-warning");
+    if (existing) existing.remove();
+
     const host = document.createElement("div");
     host.id = "trustlink-warning";
+    // all: "initial" MUST be applied FIRST so layout properties are not wiped
     Object.assign(host.style, {
+      all: "initial",
       position: "fixed",
       top: "16px",
       right: "16px",
       zIndex: "2147483647",
-      all: "initial",
+      display: "block",
     });
-
 
     const root = host.attachShadow({ mode: "closed" });
     const wrap = document.createElement("div");

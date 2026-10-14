@@ -28,11 +28,42 @@ import { defaultThreatDb as threatDb } from "./threatDb.js";
 import { normalizeForLookup } from "./urlUtils.js";
 
 const APPROVAL_TTL_MS = 5 * 60 * 1000; // "Continue anyway" stays honored for 5 minutes per tab+url
-const approvals = new Map(); // `${tabId}::${url}` -> expiry timestamp
-const blockReasons = new Map(); // blockId -> { url, score, tone, label, action, findings }
+
+// Fallback in-memory map for environments without chrome.storage.session (e.g. Node unit tests)
+const memorySessionStore = new Map();
+
+async function getSessionData(keys) {
+  if (typeof chrome !== "undefined" && chrome.storage?.session?.get) {
+    return new Promise((resolve) => chrome.storage.session.get(keys, resolve));
+  }
+  const result = {};
+  const defaults = keys && typeof keys === "object" && !Array.isArray(keys) ? keys : {};
+  const keyList = Array.isArray(keys) ? keys : typeof keys === "string" ? [keys] : Object.keys(defaults);
+  for (const k of keyList) {
+    result[k] = memorySessionStore.has(k) ? memorySessionStore.get(k) : defaults[k] ?? null;
+  }
+  return result;
+}
+
+async function setSessionData(items) {
+  if (typeof chrome !== "undefined" && chrome.storage?.session?.set) {
+    return new Promise((resolve) => chrome.storage.session.set(items, resolve));
+  }
+  for (const [k, v] of Object.entries(items)) {
+    memorySessionStore.set(k, v);
+  }
+}
+
+async function removeSessionData(keys) {
+  if (typeof chrome !== "undefined" && chrome.storage?.session?.remove) {
+    return new Promise((resolve) => chrome.storage.session.remove(keys, resolve));
+  }
+  const keyList = Array.isArray(keys) ? keys : [keys];
+  for (const k of keyList) memorySessionStore.delete(k);
+}
 
 function approvalKey(tabId, url) {
-  return `${tabId}::${url}`;
+  return `tl_appr_${tabId}_${encodeURIComponent(url)}`;
 }
 
 function isCheckableUrl(url) {
@@ -40,89 +71,107 @@ function isCheckableUrl(url) {
 }
 
 function shouldSkip(url) {
-  return url.startsWith(chrome.runtime.getURL("")) || /^(chrome|edge|about|chrome-extension|devtools|file|data):/i.test(url);
+  if (!url) return true;
+  const extUrl = typeof chrome !== "undefined" && chrome.runtime?.getURL ? chrome.runtime.getURL("") : "chrome-extension://";
+  return url.startsWith(extUrl) || /^(chrome|edge|about|chrome-extension|devtools|file|data):/i.test(url);
 }
 
-export function approveOnce(tabId, url) {
-  approvals.set(approvalKey(tabId, url), Date.now() + APPROVAL_TTL_MS);
+export async function approveOnce(tabId, url) {
+  await setSessionData({ [approvalKey(tabId, url)]: Date.now() + APPROVAL_TTL_MS });
 }
 
-function isApproved(tabId, url) {
-  const expiry = approvals.get(approvalKey(tabId, url));
+export async function isApproved(tabId, url) {
+  const key = approvalKey(tabId, url);
+  const data = await getSessionData({ [key]: 0 });
+  const expiry = data[key] || 0;
   if (!expiry) return false;
   if (Date.now() > expiry) {
-    approvals.delete(approvalKey(tabId, url));
+    await removeSessionData(key);
     return false;
   }
   return true;
 }
 
-export function getBlockReason(blockId) {
-  return blockReasons.get(blockId) || null;
+export async function getBlockReason(blockId) {
+  if (!blockId) return null;
+  const key = `tl_block_${blockId}`;
+  const data = await getSessionData({ [key]: null });
+  return data[key] || null;
 }
 
-function storeBlockReason(payload) {
+export async function storeBlockReason(payload) {
   const id = crypto.randomUUID();
-  blockReasons.set(id, payload);
-  // Keep memory bounded — this data is only needed for the few seconds
-  // between redirecting and blocked.html reading it back.
-  const timer = setTimeout(() => blockReasons.delete(id), 10 * 60 * 1000);
-  // .unref() only exists in Node (which is how the test suite runs this
-  // file) — a real MV3 service worker's setTimeout returns a plain number
-  // with no such method, so this is a no-op there and harmless either way.
+  const key = `tl_block_${id}`;
+  await setSessionData({ [key]: { id, ...payload, createdAt: Date.now() } });
+
+  // Clean up after 10 minutes to avoid bloating session storage
+  const timer = setTimeout(() => removeSessionData(key).catch(() => {}), 10 * 60 * 1000);
   if (typeof timer?.unref === "function") timer.unref();
   return id;
+}
+
+async function checkAndBlockNavigation(tabId, url) {
+  if (shouldSkip(url) || !isCheckableUrl(url)) return;
+  if (await isApproved(tabId, url)) return;
+
+  let config;
+  try {
+    config = await getCachedTrustLinkConfig();
+  } catch {
+    return; // never let a config-loading hiccup block navigation
+  }
+
+  let base;
+  try {
+    base = analyzeUrl(url, config);
+  } catch {
+    return;
+  }
+
+  let result = { ...base, ...grade(base.score) };
+
+  // Local threat-database check — a confirmed match always wins,
+  // regardless of what the heuristic score alone would have said.
+  if (config.features.feature_openphish && !config.protection.disable_openphish) {
+    try {
+      const indicator = normalizeForLookup(url);
+      const match = await threatDb.lookup(indicator);
+      if (match.matched) result = applyThreatMatch(result, match);
+    } catch {
+      // local DB unavailable
+    }
+  }
+
+  if (result.tone !== "danger" && result.tone !== "critical") return;
+
+  const blockId = await storeBlockReason({
+    url,
+    tabId,
+    score: result.score,
+    tone: result.tone,
+    label: result.label,
+    action: result.action,
+    findings: result.findings,
+  });
+
+  chrome.tabs.update(tabId, { url: chrome.runtime.getURL(`blocked.html?id=${blockId}`) }).catch(() => {});
 }
 
 export function initBlocking() {
   chrome.webNavigation.onBeforeNavigate.addListener((details) => {
     if (details.frameId !== 0) return; // main frame only
     const { url, tabId } = details;
-    if (shouldSkip(url) || !isCheckableUrl(url)) return;
-    if (isApproved(tabId, url)) return;
-
-    (async () => {
-      let config;
-      try {
-        config = await getCachedTrustLinkConfig();
-      } catch {
-        return; // never let a config-loading hiccup block navigation
-      }
-
-      let base;
-      try {
-        base = analyzeUrl(url, config);
-      } catch {
-        return;
-      }
-
-      let result = { ...base, ...grade(base.score) };
-
-      // Local threat-database check — a confirmed match always wins,
-      // regardless of what the heuristic score alone would have said.
-      if (config.features.feature_openphish && !config.protection.disable_openphish) {
-        try {
-          const indicator = normalizeForLookup(url);
-          const match = await threatDb.lookup(indicator);
-          if (match.matched) result = applyThreatMatch(result, match);
-        } catch {
-          // local DB unavailable for some reason — fall through to the
-          // heuristic-only result rather than failing the whole check
-        }
-      }
-
-      if (result.tone !== "danger" && result.tone !== "critical") return;
-
-      const blockId = storeBlockReason({
-        url,
-        score: result.score,
-        tone: result.tone,
-        label: result.label,
-        action: result.action,
-        findings: result.findings,
-      });
-
-      chrome.tabs.update(tabId, { url: chrome.runtime.getURL(`blocked.html?id=${blockId}`) }).catch(() => {});
-    })();
+    checkAndBlockNavigation(tabId, url).catch(() => {});
   });
+
+  // Catch server-side redirects (HTTP 301/302/307/308) which bypass onBeforeNavigate
+  if (chrome.webNavigation.onCommitted?.addListener) {
+    chrome.webNavigation.onCommitted.addListener((details) => {
+      if (details.frameId !== 0) return; // main frame only
+      const isServerRedirect = details.transitionQualifiers?.includes("server_redirect");
+      if (isServerRedirect) {
+        checkAndBlockNavigation(details.tabId, details.url).catch(() => {});
+      }
+    });
+  }
 }

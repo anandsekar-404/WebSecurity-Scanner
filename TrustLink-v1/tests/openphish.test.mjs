@@ -133,6 +133,80 @@ async function run() {
     assert(result.skipped === true, "the skipped call is reported as such, not as a fresh success");
   }
 
+  console.log("\nScenario: a feed that shrinks to under half the previous count is rejected");
+  {
+    const db = createThreatDb();
+    const largeFeedUrls = Array.from({ length: 200 }, (_, i) => `http://phish-large-${i}.example.org/login/verify`);
+    globalThis.fetch = async () => feedResponse(largeFeedUrls.join("\n")); // 200 entries
+    const first = await updateOpenPhishFeed(db);
+    assert(first.success === true, "seed initial 200 entries");
+    const countBefore = await db.countBySource(SOURCE_NAME);
+
+    // Now server returns 70 entries (above the 50 minimum, but under half of 200)
+    const shrankText = largeFeedUrls.slice(0, 70).join("\n");
+    globalThis.fetch = async () => feedResponse(shrankText);
+    const result = await updateOpenPhishFeed(db);
+    assert(result.success === false, "shrunk feed is rejected");
+    assert(result.reason.includes("shrank suspiciously"), `reason flags shrinkage (got: ${result.reason})`);
+    const countAfter = await db.countBySource(SOURCE_NAME);
+    assert(countAfter === countBefore, "previous threat entries preserved untouched after suspicious shrink");
+  }
+
+  console.log("\nScenario: streaming reader enforces byte limit on chunked downloads");
+  {
+    const db = createThreatDb();
+    let readerCancelled = false;
+    const oversizedChunk = new Uint8Array(6 * 1024 * 1024); // 6MB chunk
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null }, // no content-length (chunked)
+      body: {
+        getReader() {
+          let call = 0;
+          return {
+            async read() {
+              call++;
+              if (call <= 2) return { done: false, value: oversizedChunk }; // 2 chunks = 12MB > 10MB limit
+              return { done: true };
+            },
+            async cancel() { readerCancelled = true; },
+          };
+        },
+      },
+    });
+    const result = await updateOpenPhishFeed(db);
+    assert(result.success === false, "streaming reader over 10MB is rejected");
+    assert(readerCancelled === true, "stream reader was cancelled to stop unnecessary download");
+  }
+
+  console.log("\nScenario: domain-level matching excludes shared hosting platforms");
+  {
+    const db = createThreatDb();
+    const urlsWithShared = [
+      ...Array.from({ length: 50 }, (_, i) => `https://isolated-phish-${i}.example.org/login`),
+      "https://attacker.github.io/phishing-page",
+      "https://docs.google.com/forms/d/e/12345/viewform",
+    ];
+    globalThis.fetch = async () => feedResponse(urlsWithShared.join("\n"));
+    const updateResult = await updateOpenPhishFeed(db);
+    assert(updateResult.success === true, "feed with shared hosts parses successfully");
+
+    // Exact match for the shared host URL still works
+    const exactHit = await db.lookup("https://attacker.github.io/phishing-page");
+    assert(exactHit.matched === true, "exact match for shared host URL works");
+
+    // But different path on github.io or docs.google.com MUST NOT be blocked via domain match
+    const innocentGithub = await db.lookup("https://innocent-user.github.io/my-project");
+    assert(innocentGithub.matched === false, "unrelated site on shared host (github.io) is NOT blocked");
+    const innocentGoogle = await db.lookup("https://docs.google.com/document/d/safe-doc");
+    assert(innocentGoogle.matched === false, "unrelated doc on shared host (docs.google.com) is NOT blocked");
+
+    // Whereas a non-shared domain matches even on a new path
+    const domainKitHit = await db.lookup("https://isolated-phish-1.example.org/brand-new-path/auth");
+    assert(domainKitHit.matched === true && domainKitHit.type === "phishing_domain", "non-shared domain matches on new path");
+  }
+
   console.log("\nALL OPENPHISH ADAPTER TESTS PASSED");
 }
 

@@ -12,8 +12,14 @@
 // This file has no side effects and does no I/O — pure validation, fully
 // unit-testable.
 
-const WEIGHT_RANGE = [0, 100];
-const RISK_RANGE = [0, 100];
+const WEIGHT_RANGE = [5, 50]; // Detection weights cannot be zeroed out (floor: 5) or bloated (ceiling: 50)
+const RISK_THRESHOLD_BOUNDS = {
+  risk_low_threshold: [0, 40],
+  risk_medium_threshold: [0, 60],
+  risk_high_threshold: [0, 85],
+  risk_critical_threshold: [0, 95],
+};
+const MIN_PROTECTED_BRANDS = 10; // Remote Config cannot wipe or gut the protected brands list
 const MAX_LIST_SIZE = 200;
 const MAX_STRING_LEN = 253; // longest legal DNS name
 
@@ -25,8 +31,8 @@ function isBoolean(v) {
   return typeof v === "boolean";
 }
 
-function isStringList(v, maxItems = MAX_LIST_SIZE, maxLen = MAX_STRING_LEN) {
-  return Array.isArray(v) && v.length <= maxItems && v.every((s) => typeof s === "string" && s.length > 0 && s.length <= maxLen);
+function isStringList(v, maxItems = MAX_LIST_SIZE, maxLen = MAX_STRING_LEN, minItems = 1) {
+  return Array.isArray(v) && v.length >= minItems && v.length <= maxItems && v.every((s) => typeof s === "string" && s.length > 0 && s.length <= maxLen);
 }
 
 /**
@@ -35,11 +41,15 @@ function isStringList(v, maxItems = MAX_LIST_SIZE, maxLen = MAX_STRING_LEN) {
  */
 export function isValidParam(key, value) {
   if (key.startsWith("detection_") && key.endsWith("_score")) return isFiniteNumberInRange(value, WEIGHT_RANGE);
-  if (key.startsWith("risk_") && key.endsWith("_threshold")) return isFiniteNumberInRange(value, RISK_RANGE);
+  if (key in RISK_THRESHOLD_BOUNDS) return isFiniteNumberInRange(value, RISK_THRESHOLD_BOUNDS[key]);
+  if (key.startsWith("risk_") && key.endsWith("_threshold")) return isFiniteNumberInRange(value, [0, 100]);
   if (key.startsWith("feature_")) return isBoolean(value);
   if (key === "protection_emergency_enabled") return isBoolean(value);
+  // Never allow remote config to silently switch off OpenPhish threat intelligence
+  if (key === "disable_openphish") return value === false;
   if (key.startsWith("disable_")) return isBoolean(value);
-  if (key === "protectedBrands" || key === "suspiciousTlds" || key === "suspiciousKeywords" || key === "redirectParamNames") return isStringList(value);
+  if (key === "protectedBrands") return isStringList(value, MAX_LIST_SIZE, MAX_STRING_LEN, MIN_PROTECTED_BRANDS);
+  if (key === "suspiciousTlds" || key === "suspiciousKeywords" || key === "redirectParamNames") return isStringList(value);
   if (key === "system_config_version") return Number.isInteger(value) && value >= 0;
   if (key === "system_min_fetch_interval_ms" || key === "system_feed_update_interval_ms") return isFiniteNumberInRange(value, [60_000, 7 * 24 * 60 * 60 * 1000]);
   return false; // unknown key — never trust something we don't have a rule for

@@ -158,6 +158,14 @@ export function grade(score) {
  * only after lib/threatDb.js has returned matched: true.
  */
 export function applyThreatMatch(baseResult, match) {
+  const isDomain = match.type === "phishing_domain";
+  const title = isDomain
+    ? `Known phishing domain (${match.source})`
+    : `Known ${match.type === "malware_url" ? "malware" : "phishing"} URL`;
+  const detail = isDomain
+    ? `TrustLink flagged this entire domain as associated with phishing in the ${match.source} threat database (last updated ${match.lastUpdated || "recently"}). Even though the path differs, the domain itself is a confirmed threat.`
+    : `TrustLink found this exact address in the ${match.source} threat database (last updated ${match.lastUpdated || "recently"}). This is a confirmed match, not a heuristic guess.`;
+
   return {
     ...baseResult,
     score: 100,
@@ -166,8 +174,10 @@ export function applyThreatMatch(baseResult, match) {
     action: "Do not enter passwords, OTP codes, payment information, or other sensitive information. Go back.",
     findings: [
       {
-        id: "known-threat-match", level: "high", title: `Known ${match.type === "malware_url" ? "malware" : "phishing"} URL`,
-        detail: `TrustLink found this exact address in the ${match.source} threat database (last updated ${match.lastUpdated || "recently"}). This is a confirmed match, not a heuristic guess.`,
+        id: "known-threat-match",
+        level: "high",
+        title,
+        detail,
       },
       ...baseResult.findings,
     ],

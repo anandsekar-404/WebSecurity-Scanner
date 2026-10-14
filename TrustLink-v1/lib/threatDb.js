@@ -140,6 +140,8 @@ function createMemoryBackend() {
   };
 }
 
+import { isSharedHost } from "./urlUtils.js";
+
 /**
  * Creates a ThreatDb instance. `backend` can be injected directly (used by
  * tests that want to assert against a known backend); otherwise the right
@@ -148,15 +150,40 @@ function createMemoryBackend() {
 export function createThreatDb(backend = hasIndexedDb() ? createIndexedDbBackend() : createMemoryBackend()) {
   return {
     /**
-     * Exact-match lookup. Returns { matched: true, source, type, lastUpdated }
+     * Exact-match or domain-level lookup. Returns { matched: true, source, type, lastUpdated }
      * or { matched: false } — a miss is explicitly "no known match", never
      * "safe" (spec section 22/38).
      */
     async lookup(normalizedIndicator) {
       if (!normalizedIndicator) return { matched: false };
       const entry = await backend.lookup(normalizedIndicator);
-      if (!entry) return { matched: false };
-      return { matched: true, source: entry.source, type: entry.type, lastUpdated: entry.last_updated };
+      if (entry) {
+        return { matched: true, source: entry.source, type: entry.type, lastUpdated: entry.last_updated };
+      }
+
+      // Domain-level fallback: if exact URL misses, check if the domain itself is a known threat
+      if (typeof normalizedIndicator === "string" && /^https?:\/\//i.test(normalizedIndicator)) {
+        try {
+          const u = new URL(normalizedIndicator);
+          const host = u.hostname.toLowerCase();
+          if (host && !isSharedHost(host)) {
+            const domainEntry = await backend.lookup(`domain:${host}`);
+            if (domainEntry) {
+              return {
+                matched: true,
+                source: domainEntry.source,
+                type: domainEntry.type || "phishing_domain",
+                lastUpdated: domainEntry.last_updated,
+                domainMatch: true,
+              };
+            }
+          }
+        } catch {
+          // not a parseable URL
+        }
+      }
+
+      return { matched: false };
     },
 
     /**
@@ -168,11 +195,11 @@ export function createThreatDb(backend = hasIndexedDb() ? createIndexedDbBackend
      * leaving the previous database untouched, i.e. simply not calling
      * this at all when the download/validation step failed.
      */
-    async replaceSource(source, entries, { databaseVersion, status = "active" } = {}) {
+    async replaceSource(source, entries, { databaseVersion, status = "active", entryCount } = {}) {
       const meta = {
         database_version: databaseVersion || new Date().toISOString(),
         last_successful_update: new Date().toISOString(),
-        entry_count: entries.length,
+        entry_count: entryCount ?? entries.length,
         database_status: status,
       };
       await backend.replaceSource(source, entries, meta);

@@ -63,10 +63,8 @@ document.getElementById("cancelContinue").addEventListener("click", () => {
 });
 
 document.getElementById("continueAnywayBtn").addEventListener("click", async () => {
-  const info = window.__blockInfo;
-  const tab = await chrome.tabs.getCurrent();
-  if (!info || tab?.id == null) return;
-  await chrome.runtime.sendMessage({ type: "approveContinue", url: info.url, tabId: tab.id }).catch(() => {});
+  if (!blockId) return;
+  await chrome.runtime.sendMessage({ type: "approveContinue", id: blockId }).catch(() => {});
 });
 
 init();

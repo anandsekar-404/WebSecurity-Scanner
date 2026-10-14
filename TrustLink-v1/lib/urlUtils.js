@@ -25,8 +25,61 @@ export function isIpLiteral(host) {
 }
 
 export function isPrivateHost(host) {
-  return host === "localhost" || /^127\./.test(host) || /^10\./.test(host) ||
-    /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[0-1])\./.test(host);
+  if (!host) return false;
+  const clean = host.replace(/^\[|\]$/g, "").trim().toLowerCase();
+
+  // Internal / local domains
+  if (/(^|\.)(localhost|local|internal|lan|home|corp)$/i.test(clean)) return true;
+
+  // IPv4 checks
+  if (clean === "0.0.0.0" || /^0\./.test(clean)) return true;
+  if (/^127\./.test(clean)) return true; // Loopback (127.0.0.0/8)
+  if (/^10\./.test(clean)) return true; // Private RFC 1918 (10.0.0.0/8)
+  if (/^172\.(1[6-9]|2\d|3[0-1])\./.test(clean)) return true; // Private RFC 1918 (172.16.0.0/12)
+  if (/^192\.168\./.test(clean)) return true; // Private RFC 1918 (192.168.0.0/16)
+  if (/^169\.254\./.test(clean)) return true; // Link-local RFC 3927 (169.254.0.0/16)
+  if (/^100\.(6[4-9]|[7-9]\d|1[0-1]\d|12[0-7])\./.test(clean)) return true; // CGNAT RFC 6598 (100.64.0.0/10)
+
+  // IPv6 checks
+  if (clean === "::1" || clean === "::" || clean === "0:0:0:0:0:0:0:1" || clean === "0:0:0:0:0:0:0:0") return true;
+  if (/^fe[89ab][0-9a-f]?::?/i.test(clean)) return true; // Link-local fe80::/10
+  if (/^f[cd][0-9a-f]{2}::?/i.test(clean)) return true; // Unique local fc00::/7
+  if (/^::ffff:/i.test(clean)) {
+    const v4 = clean.replace(/^::ffff:/i, "");
+    return isPrivateHost(v4);
+  }
+
+  return false;
+}
+
+// Shared platforms where multi-tenant subdomains/paths exist.
+// These must be excluded from domain-level threat matching so single phishing links
+// don't cause entire public hosting platforms or document services to be blocked.
+export const SHARED_HOST_EXCLUSIONS = new Set([
+  // Static / code / app hosting
+  "github.io", "gitlab.io", "pages.dev", "vercel.app", "netlify.app",
+  "web.app", "firebaseapp.com", "azurewebsites.net", "herokuapp.com",
+  "glitch.me", "repl.co", "workers.dev", "render.com", "onrender.com",
+  // Cloud storage, forms & docs
+  "blob.core.windows.net", "s3.amazonaws.com", "amazonaws.com",
+  "google.com", "docs.google.com", "drive.google.com", "sites.google.com",
+  "forms.gle", "sharepoint.com", "dropbox.com", "onedrive.live.com",
+  // URL shorteners & redirection
+  "bit.ly", "tinyurl.com", "t.co", "cutt.ly", "is.gd", "rebrand.ly", "ow.ly",
+  // Tunnels
+  "ngrok.io", "ngrok-free.app", "loca.lt", "pagekite.me",
+  // Free website builders
+  "000webhostapp.com", "wixsite.com", "weebly.com", "wordpress.com", "blogspot.com",
+]);
+
+export function isSharedHost(host) {
+  if (!host) return false;
+  const clean = host.replace(/^\[|\]$/g, "").trim().toLowerCase();
+  if (SHARED_HOST_EXCLUSIONS.has(clean)) return true;
+  for (const shared of SHARED_HOST_EXCLUSIONS) {
+    if (clean.endsWith(`.${shared}`)) return true;
+  }
+  return false;
 }
 
 export function registrableDomain(host) {

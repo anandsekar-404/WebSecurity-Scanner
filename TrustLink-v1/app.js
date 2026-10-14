@@ -9,8 +9,14 @@ async function loadInitial(rawValue) {
   if (!value) return;
   setLoading();
   $("#domainName").textContent = "Checking…";
+  const deepCheck = Boolean($("#deepCheckToggle")?.checked);
   try {
-    const result = await chrome.runtime.sendMessage({ type: "inspect", url: value });
+    const result = await chrome.runtime.sendMessage({
+      type: "inspect",
+      url: value,
+      isPasted: true,
+      deepCheck,
+    });
     render(result, { isManual: false, tab: null });
     $("#linkInput").value = result.url || value;
   } catch (err) {
@@ -25,8 +31,14 @@ async function checkLink(rawValue) {
   if (!value) return;
   setLoading();
   $("#domainName").textContent = "Checking…";
+  const deepCheck = Boolean($("#deepCheckToggle")?.checked);
   try {
-    const result = await chrome.runtime.sendMessage({ type: "manualScan", url: value });
+    const result = await chrome.runtime.sendMessage({
+      type: "manualScan",
+      url: value,
+      isPasted: true,
+      deepCheck,
+    });
     if (result?.gated) {
       openInstagramGate(() => checkLink(value));
       return;

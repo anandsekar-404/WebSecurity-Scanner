@@ -19,13 +19,46 @@
 // malformed or corrupted line is silently dropped, not stored as-is
 // (spec section 40).
 
-import { normalizeForLookup } from "../urlUtils.js";
+import { normalizeForLookup, isSharedHost } from "../urlUtils.js";
 
 export const SOURCE_NAME = "OpenPhish";
 const FEED_URL = "https://openphish.com/feed.txt";
 const MAX_FEED_BYTES = 10 * 1024 * 1024; // 10MB sanity ceiling — the real feed is far smaller; a huge response signals something's wrong upstream
 const MAX_ENTRIES = 100_000;
 const MIN_ENTRIES_FOR_VALID_UPDATE = 50; // a healthy feed has thousands; anything drastically smaller suggests a truncated/broken download
+
+async function readBodyWithLimit(res, maxBytes) {
+  if (res.body && typeof res.body.getReader === "function") {
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let totalBytes = 0;
+    let result = "";
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength || value.length;
+        if (totalBytes > maxBytes) {
+          await reader.cancel().catch(() => {});
+          throw new Error("feed larger than expected — refusing to process");
+        }
+        result += decoder.decode(value, { stream: true });
+      }
+      result += decoder.decode();
+      return result;
+    } catch (err) {
+      await reader.cancel().catch(() => {});
+      throw err;
+    }
+  }
+
+  // Fallback for mock environments / simple responses
+  const text = await res.text();
+  if (text.length > maxBytes) {
+    throw new Error("feed larger than expected — refusing to process");
+  }
+  return text;
+}
 
 /**
  * Downloads, validates, and — only if validation passes — publishes the
@@ -51,10 +84,7 @@ export async function updateOpenPhishFeed(threatDb, { force = false, minInterval
       return { success: false, reason: "feed larger than expected — refusing to process" };
     }
 
-    const text = await res.text();
-    if (text.length > MAX_FEED_BYTES) {
-      return { success: false, reason: "feed larger than expected — refusing to process" };
-    }
+    const text = await readBodyWithLimit(res, MAX_FEED_BYTES);
 
     const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
     if (lines.length > MAX_ENTRIES) {
@@ -78,9 +108,6 @@ export async function updateOpenPhishFeed(threatDb, { force = false, minInterval
         source: SOURCE_NAME,
         last_updated: nowIso,
         status: "active",
-        // NOTE: no `first_seen` field — the community feed doesn't supply
-        // per-entry timestamps, and spec section 21 says only store fields
-        // the provider actually gives us. Don't invent one.
       });
     }
 
@@ -88,7 +115,41 @@ export async function updateOpenPhishFeed(threatDb, { force = false, minInterval
       return { success: false, reason: `only ${entries.length} valid entries parsed (expected far more) — treating as a bad download, keeping previous database` };
     }
 
-    const meta = await threatDb.replaceSource(SOURCE_NAME, entries, { databaseVersion: nowIso, status: "active" });
+    // Protect against feed shrinkage / truncation: reject if the feed dropped by more than half compared to previous
+    const prevCount = await threatDb.countBySource(SOURCE_NAME);
+    if (prevCount > 0 && entries.length < Math.floor(prevCount * 0.5)) {
+      return {
+        success: false,
+        reason: `feed shrank suspiciously from ${prevCount} to ${entries.length} entries (under half) — treating as a bad download, keeping previous database`,
+      };
+    }
+
+    // Generate domain-level indicators for non-shared hosts to catch phishing kits rotated to new paths
+    const seenDomains = new Set();
+    const domainEntries = [];
+    for (const entry of entries) {
+      try {
+        const u = new URL(entry.indicator);
+        const host = u.hostname.toLowerCase();
+        if (host && !isSharedHost(host) && !seenDomains.has(host)) {
+          seenDomains.add(host);
+          domainEntries.push({
+            indicator: `domain:${host}`,
+            type: "phishing_domain",
+            source: SOURCE_NAME,
+            last_updated: nowIso,
+            status: "active",
+          });
+        }
+      } catch {}
+    }
+
+    const allEntries = [...entries, ...domainEntries];
+    const meta = await threatDb.replaceSource(SOURCE_NAME, allEntries, {
+      databaseVersion: nowIso,
+      status: "active",
+      entryCount: entries.length,
+    });
     return { success: true, entryCount: entries.length, malformedDropped: malformed, meta };
   } catch (err) {
     return { success: false, reason: err?.message || "network error" };

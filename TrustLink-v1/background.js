@@ -36,9 +36,15 @@ async function checkThreatDatabase(config, urlString) {
   }
 }
 
-async function inspect(rawUrl) {
+function isExtensionSender(sender) {
+  if (!sender || sender.id !== chrome.runtime.id) return false;
+  const extPrefix = chrome.runtime.getURL("");
+  return typeof sender.url === "string" && sender.url.startsWith(extPrefix);
+}
+
+async function inspect(rawUrl, { isPasted = false, deepCheck = false } = {}) {
   const urlString = normalizeUrl(rawUrl);
-  const key = urlString;
+  const key = `${urlString}::pasted=${isPasted}::deep=${deepCheck}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.time < CACHE_MS) return hit.result;
 
@@ -51,16 +57,33 @@ async function inspect(rawUrl) {
   let findings = [...base.findings];
 
   if (base.safeToFetch) {
-    try {
-      const response = await fetch(urlString, { method: "HEAD", redirect: "follow", cache: "no-store" });
-      const headerCheck = analyzeResponse(urlString, response, config);
-      score += headerCheck.scoreDelta;
-      findings = [...findings, ...headerCheck.findings];
-    } catch {
+    if (isPasted && !deepCheck) {
       findings.push({
-        id: "header-check-unavailable", level: "low", title: "Header check unavailable",
-        detail: "This site didn't respond to a lightweight background request, so header-based signals aren't available. URL-based checks are still shown above."
+        id: "passive-only",
+        level: "good",
+        title: "Passive URL inspection (privacy-first)",
+        detail: "This pasted address was checked locally with heuristics and threat feeds without contacting the server. Deep live header checks are opt-in.",
       });
+    } else {
+      try {
+        const response = await fetch(urlString, {
+          method: "HEAD",
+          redirect: "follow",
+          cache: "no-store",
+          credentials: "omit",
+          signal: AbortSignal.timeout(8000),
+        });
+        const headerCheck = analyzeResponse(urlString, response, config);
+        score += headerCheck.scoreDelta;
+        findings = [...findings, ...headerCheck.findings];
+      } catch {
+        findings.push({
+          id: "header-check-unavailable",
+          level: "low",
+          title: "Header check unavailable",
+          detail: "This site didn't respond to a lightweight background request within 8 seconds, so header-based signals aren't available. URL-based checks are still shown above.",
+        });
+      }
     }
   }
 
@@ -140,7 +163,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           return;
         }
         const tabId = message.updateBadge ? (message.tabId ?? sender.tab?.id ?? null) : null;
-        inspect(message.url)
+        inspect(message.url, { isPasted: Boolean(message.isPasted), deepCheck: Boolean(message.deepCheck) })
           .then((result) => {
             setBadge(tabId, result);
             respond(result);
@@ -164,7 +187,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           }
           const tabId = message.updateBadge ? (message.tabId ?? sender.tab?.id ?? null) : null;
           try {
-            const result = await inspect(message.url);
+            const result = await inspect(message.url, {
+              isPasted: Boolean(message.isPasted),
+              deepCheck: Boolean(message.deepCheck),
+            });
             await recordManualScanCompleted();
             setBadge(tabId, result);
             respond({ gated: false, ...result });
@@ -182,6 +208,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }
 
     case "confirmInstagramFollow": {
+      if (!isExtensionSender(sender)) {
+        respond({ ok: false, error: "Unauthorized sender" });
+        return false;
+      }
       confirmInstagramFollow().then((r) => respond({ ok: true, ...r })).catch(() => respond({ ok: false }));
       return true;
     }
@@ -192,6 +222,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }
 
     case "setAutoScanEnabled": {
+      if (!isExtensionSender(sender)) {
+        respond({ error: "Unauthorized sender" });
+        return false;
+      }
       setAutoScanEnabled(message.enabled)
         .then(async (enabled) => {
           if (!enabled) await clearAllBadges();
@@ -202,22 +236,46 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }
 
     case "getBlockInfo": {
-      respond(getBlockReason(message.id));
-      return false;
+      if (!isExtensionSender(sender)) {
+        respond(null);
+        return false;
+      }
+      getBlockReason(message.id).then(respond).catch(() => respond(null));
+      return true;
     }
 
     case "approveContinue": {
-      if (message.tabId != null && message.url) {
-        approveOnce(message.tabId, message.url);
-        chrome.tabs.update(message.tabId, { url: message.url }).catch(() => {});
+      if (!isExtensionSender(sender)) {
+        respond({ ok: false, error: "Unauthorized sender" });
+        return false;
       }
-      respond({ ok: true });
-      return false;
+      const blockId = message.id || message.blockId;
+      if (!blockId) {
+        respond({ ok: false, error: "Missing block ID" });
+        return false;
+      }
+      getBlockReason(blockId).then(async (record) => {
+        if (!record || !record.url) {
+          respond({ ok: false, error: "Block record expired or not found" });
+          return;
+        }
+        const targetTabId = sender.tab?.id ?? record.tabId;
+        if (targetTabId != null) {
+          await approveOnce(targetTabId, record.url);
+          chrome.tabs.update(targetTabId, { url: record.url }).catch(() => {});
+        }
+        respond({ ok: true });
+      }).catch(() => respond({ ok: false, error: "Approval failed" }));
+      return true;
     }
 
     // Developer-only diagnostics panel (spec section 48). Read-only —
     // never triggers a fetch itself, just reports the state of the last one.
     case "getDebugStatus": {
+      if (!isExtensionSender(sender)) {
+        respond({ error: "Unauthorized sender" });
+        return false;
+      }
       Promise.all([getDebugStatus(), threatDb.getStatus()])
         .then(([remoteConfigStatus, threatDbStatus]) => {
           respond({
@@ -235,6 +293,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     // Manual "force refresh" for the debug panel — bypasses both Remote
     // Config's and the OpenPhish adapter's normal fetch-interval throttling.
     case "forceRefreshThreatData": {
+      if (!isExtensionSender(sender)) {
+        respond({ error: "Unauthorized sender" });
+        return false;
+      }
       (async () => {
         try {
           const config = await getTrustLinkConfig({ forceRefresh: true });
