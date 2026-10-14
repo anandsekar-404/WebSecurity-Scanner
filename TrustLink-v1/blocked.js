@@ -28,19 +28,40 @@ async function init() {
   document.querySelector(".blocked-shell")?.classList.add(info.tone === "critical" ? "critical" : "danger");
 
   const list = document.getElementById("blockedReasonsList");
-  const reasons = info.findings.filter((f) => f.id !== "known-threat-match" && (f.level === "high" || f.level === "medium")).slice(0, 6);
-  const items = [];
-  if (threatMatch) items.push(`<li><strong>${escapeHtml(threatMatch.title)}</strong> — ${escapeHtml(threatMatch.detail)}</li>`);
-  items.push(...(reasons.length ? reasons : items.length ? [] : [{ title: "Multiple risk signals detected in this address" }]).map((f) => `<li>${escapeHtml(f.title)}</li>`));
-  list.innerHTML = items.join("");
+  list.replaceChildren();
+
+  if (threatMatch) {
+    const li = document.createElement("li");
+    const strong = document.createElement("strong");
+    strong.textContent = threatMatch.title || "";
+    li.appendChild(strong);
+    li.appendChild(document.createTextNode(` — ${threatMatch.detail || ""}`));
+    list.appendChild(li);
+  }
+
+  const reasons = (info.findings || []).filter((f) => f.id !== "known-threat-match" && (f.level === "high" || f.level === "medium")).slice(0, 6);
+  if (reasons.length > 0) {
+    for (const f of reasons) {
+      const li = document.createElement("li");
+      li.textContent = f.title || "";
+      list.appendChild(li);
+    }
+  } else if (!threatMatch) {
+    const li = document.createElement("li");
+    li.textContent = "Multiple risk signals detected in this address";
+    list.appendChild(li);
+  }
 
   window.__blockInfo = info;
 }
 
 function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 document.getElementById("goBackBtn").addEventListener("click", async () => {

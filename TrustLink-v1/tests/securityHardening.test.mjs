@@ -5,6 +5,12 @@ let messageListener = null;
 const sessionData = {};
 const tabUpdates = [];
 
+// Static test fixture: prevent automated tests from visiting live external services
+globalThis.fetch = async () => new Response("https://mock-phishing.example/test\n", {
+  status: 200,
+  headers: { "content-type": "text/plain" },
+});
+
 globalThis.chrome = {
   runtime: {
     id: "test-extension-id",

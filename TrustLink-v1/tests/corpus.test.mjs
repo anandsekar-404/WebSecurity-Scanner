@@ -238,7 +238,7 @@ async function run() {
   assert.equal(falsePositiveCaution, 0, `Zero legitimate URLs must be classified as Caution (got ${falsePositiveCaution})`);
 
   // --- Run Phishing Corpus ---
-  console.log(`\nScenario: Phishing Corpus Detection Accuracy`);
+  console.log(`\nScenario: Phishing Corpus Detection Accuracy & Confusion Matrix`);
   let detectedDanger = 0;
   let detectedCaution = 0;
   let missed = 0;
@@ -255,15 +255,60 @@ async function run() {
     }
   }
 
-  const detectionRate = ((detectedDanger + detectedCaution) / PHISHING_URLS.length) * 100;
-  const highRiskRate = (detectedDanger / PHISHING_URLS.length) * 100;
+  // --- Formal Classification Metrics Calculation ---
+  // Positive Class: Phishing / Malicious / Suspicious (Score >= 30)
+  // Negative Class: Legitimate (Score < 30)
+  const TP = detectedDanger + detectedCaution;
+  const FN = missed;
+  const FP = falsePositiveHighRisk + falsePositiveCaution;
+  const TN = LEGITIMATE_URLS.length - FP;
 
-  console.log(`  Phishing URLs Evaluated: ${PHISHING_URLS.length}`);
-  console.log(`  Detected as High Risk:   ${detectedDanger} (${highRiskRate.toFixed(1)}%)`);
-  console.log(`  Detected as Caution:     ${detectedCaution}`);
-  console.log(`  Total Detection Rate:    ${detectionRate.toFixed(1)}%`);
+  const precision = TP + FP > 0 ? TP / (TP + FP) : 1;
+  const recall = TP + FN > 0 ? TP / (TP + FN) : 0;
+  const f1Score = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+  const fpr = FP + TN > 0 ? FP / (FP + TN) : 0;
+  const fnr = TP + FN > 0 ? FN / (TP + FN) : 0;
+  const accuracy = (TP + TN) / (TP + TN + FP + FN);
 
-  assert(detectionRate >= 95, `Total phishing detection rate must be >= 95% (got ${detectionRate.toFixed(1)}%)`);
+  // High Risk Specific Metrics (Threshold >= 60)
+  const tpHigh = detectedDanger;
+  const fpHigh = falsePositiveHighRisk;
+  const fnHigh = detectedCaution + missed;
+  const tnHigh = LEGITIMATE_URLS.length - fpHigh;
+  const precisionHigh = tpHigh + fpHigh > 0 ? tpHigh / (tpHigh + fpHigh) : 1;
+  const recallHigh = tpHigh + fnHigh > 0 ? tpHigh / (tpHigh + fnHigh) : 0;
+  const f1High = precisionHigh + recallHigh > 0 ? (2 * precisionHigh * recallHigh) / (precisionHigh + recallHigh) : 0;
+
+  console.log(`\n--------------------------------------------------------`);
+  console.log(`CONFUSION MATRIX (3-Tier & Binary Breakdown)`);
+  console.log(`--------------------------------------------------------`);
+  console.log(`Actual \\ Predicted   | High Risk (>=60) | Caution (30-59) | Safe (<30) | Total`);
+  console.log(`--------------------+------------------+-----------------+------------+------`);
+  console.log(`Phishing (N=${PHISHING_URLS.length})     | ${String(detectedDanger).padEnd(16)} | ${String(detectedCaution).padEnd(15)} | ${String(missed).padEnd(10)} | ${PHISHING_URLS.length}`);
+  console.log(`Legitimate (N=${LEGITIMATE_URLS.length})   | ${String(falsePositiveHighRisk).padEnd(16)} | ${String(falsePositiveCaution).padEnd(15)} | ${String(TN).padEnd(10)} | ${LEGITIMATE_URLS.length}`);
+  console.log(`--------------------------------------------------------`);
+  console.log(`OVERALL CLASSIFICATION PERFORMANCE METRICS:`);
+  console.log(`  True Positives (TP):          ${TP}`);
+  console.log(`  False Positives (FP):         ${FP}`);
+  console.log(`  True Negatives (TN):          ${TN}`);
+  console.log(`  False Negatives (FN):         ${FN}`);
+  console.log(`  Precision (PPV):              ${(precision * 100).toFixed(2)}%`);
+  console.log(`  Recall / Sensitivity (TPR):   ${(recall * 100).toFixed(2)}%`);
+  console.log(`  F1-Score:                     ${f1Score.toFixed(4)}`);
+  console.log(`  False Positive Rate (FPR):    ${(fpr * 100).toFixed(2)}%`);
+  console.log(`  False Negative Rate (FNR):    ${(fnr * 100).toFixed(2)}%`);
+  console.log(`  Overall Accuracy:             ${(accuracy * 100).toFixed(2)}%`);
+  console.log(`--------------------------------------------------------`);
+  console.log(`HIGH-RISK SPECIFIC PERFORMANCE (>=60):`);
+  console.log(`  High-Risk Precision:          ${(precisionHigh * 100).toFixed(2)}%`);
+  console.log(`  High-Risk Recall:             ${(recallHigh * 100).toFixed(2)}%`);
+  console.log(`  High-Risk F1-Score:           ${f1High.toFixed(4)}`);
+  console.log(`--------------------------------------------------------\n`);
+
+  assert(precision >= 0.95, `Precision must be >= 95% (got ${(precision * 100).toFixed(2)}%)`);
+  assert(recall >= 0.95, `Recall must be >= 95% (got ${(recall * 100).toFixed(2)}%)`);
+  assert(f1Score >= 0.95, `F1-Score must be >= 0.95 (got ${f1Score.toFixed(4)})`);
+  assert.equal(FP, 0, `False Positive count must be 0 (got ${FP})`);
   assert.equal(missed, 0, `Zero phishing URLs should be completely missed as safe (got ${missed})`);
 
   // --- Test 3: Passive Header and Session Storage Path ---

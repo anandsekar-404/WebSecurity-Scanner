@@ -1,4 +1,4 @@
-import { analyzeUrl, analyzeResponse, grade, applyThreatMatch } from "./analyzer.js";
+import { analyzeUrl, analyzeResponse, grade, applyThreatMatch, clampScore } from "./analyzer.js";
 import {
   getGateState,
   canRunManualScan,
@@ -18,6 +18,7 @@ import { unavailableReason as phishtankUnavailableReason } from "./lib/adapters/
 // doesn't repeat the network request. Cleared on service worker restart.
 const cache = new Map();
 const CACHE_MS = 60_000;
+const inFlight = new Map();
 
 function normalizeUrl(raw) {
   const trimmed = (raw || "").trim();
@@ -142,98 +143,112 @@ async function inspect(rawUrl, { isPasted = false, deepCheck = false, tabId = nu
   const hit = cache.get(key);
   if (hit && Date.now() - hit.time < CACHE_MS) return hit.result;
 
-  // Best-effort: uses cached/default config immediately if Firebase is slow
-  // or unreachable — never blocks a scan on Remote Config (spec section 12).
-  const config = await getTrustLinkConfig();
-
-  const base = analyzeUrl(urlString, config);
-  let score = base.score;
-  let findings = [...base.findings];
-  let cachedHeaders = null;
-
-  if (base.safeToFetch) {
-    cachedHeaders = tabId != null ? await getSessionData(`tl_hdr_${tabId}`).catch(() => null) : null;
-
-    if (cachedHeaders && cachedHeaders.headers) {
-      // Passive header check: read from session storage (zero duplicate requests, survives SW sleep)
-      const passiveResponse = {
-        url: cachedHeaders.url || urlString,
-        status: cachedHeaders.statusCode || 200,
-        headers: {
-          get: (name) => cachedHeaders.headers[name.toLowerCase()] || null,
-        },
-      };
-      const headerCheck = analyzeResponse(cachedHeaders.origin || urlString, passiveResponse, config);
-      score += headerCheck.scoreDelta;
-      findings = [...findings, ...headerCheck.findings];
-    } else if (deepCheck) {
-      // Opt-in active deep check: strip query string and fragment for privacy
-      let probeUrl = urlString;
-      try {
-        const parsed = new URL(urlString);
-        parsed.search = "";
-        parsed.hash = "";
-        probeUrl = parsed.toString();
-      } catch {}
-
-      try {
-        const response = await fetch(probeUrl, {
-          method: "HEAD",
-          redirect: "follow",
-          cache: "no-store",
-          credentials: "omit",
-          signal: AbortSignal.timeout(8000),
-        });
-
-        if (response.status === 403 || response.status === 405) {
-          findings.push({
-            id: "header-check-unavailable",
-            level: "low",
-            title: "Header check unavailable",
-            detail: `The server returned HTTP ${response.status} to a HEAD probe. Header-based signals are unavailable; URL checks remain active.`,
-          });
-        } else {
-          const headerCheck = analyzeResponse(urlString, response, config);
-          score += headerCheck.scoreDelta;
-          findings = [...findings, ...headerCheck.findings];
-        }
-      } catch {
-        findings.push({
-          id: "header-check-unavailable",
-          level: "low",
-          title: "Header check unavailable",
-          detail: "This site didn't respond to a lightweight probe within 8 seconds, so header-based signals aren't available. URL-based checks are still shown above.",
-        });
-      }
-    } else if (isPasted) {
-      findings.push({
-        id: "passive-only",
-        level: "good",
-        title: "Passive URL inspection (privacy-first)",
-        detail: "This pasted address was checked locally with heuristics and threat feeds without contacting the server. Deep live header checks are opt-in.",
-      });
-    }
+  if (inFlight.has(key)) {
+    return inFlight.get(key);
   }
 
-  const finalScore = Math.max(0, Math.min(Math.round(score), 100));
-  let result = {
-    url: urlString,
-    domain: base.host,
-    score: finalScore,
-    redirected: Boolean(cachedHeaders?.origin),
-    ...grade(finalScore),
-    findings,
-    checkedAt: new Date().toISOString(),
-  };
+  const scanPromise = (async () => {
+    try {
+      // Best-effort: uses cached/default config immediately if Firebase is slow
+      // or unreachable — never blocks a scan on Remote Config (spec section 12).
+      const config = await getTrustLinkConfig();
 
-  // A confirmed local threat-database match overrides the heuristic grade
-  // entirely — this is the ONLY path that produces tone: "critical". See
-  // analyzer.js's applyThreatMatch() doc comment.
-  const match = await checkThreatDatabase(config, urlString);
-  if (match.matched) result = applyThreatMatch(result, match);
+      const base = analyzeUrl(urlString, config);
+      let score = base.score;
+      let findings = [...base.findings];
+      let cachedHeaders = null;
 
-  cache.set(key, { result, time: Date.now() });
-  return result;
+      if (base.safeToFetch) {
+        cachedHeaders = tabId != null ? await getSessionData(`tl_hdr_${tabId}`).catch(() => null) : null;
+
+        if (cachedHeaders && cachedHeaders.headers) {
+          // Passive header check: read from session storage (zero duplicate requests, survives SW sleep)
+          const passiveResponse = {
+            url: cachedHeaders.url || urlString,
+            status: cachedHeaders.statusCode || 200,
+            headers: {
+              get: (name) => cachedHeaders.headers[name.toLowerCase()] || null,
+            },
+          };
+          const headerCheck = analyzeResponse(cachedHeaders.origin || urlString, passiveResponse, config);
+          score += headerCheck.scoreDelta;
+          findings = [...findings, ...headerCheck.findings];
+        } else if (deepCheck) {
+          // Opt-in active deep check: strip query string and fragment for privacy
+          let probeUrl = urlString;
+          try {
+            const parsed = new URL(urlString);
+            parsed.search = "";
+            parsed.hash = "";
+            probeUrl = parsed.toString();
+          } catch {}
+
+          try {
+            const response = await fetch(probeUrl, {
+              method: "HEAD",
+              redirect: "follow",
+              cache: "no-store",
+              credentials: "omit",
+              signal: AbortSignal.timeout(8000),
+            });
+
+            if (response.status === 403 || response.status === 405) {
+              findings.push({
+                id: "header-check-unavailable",
+                level: "low",
+                title: "Header check unavailable",
+                detail: `The server returned HTTP ${response.status} to a HEAD probe. Header-based signals are unavailable; URL checks remain active.`,
+              });
+            } else {
+              const headerCheck = analyzeResponse(urlString, response, config);
+              score += headerCheck.scoreDelta;
+              findings = [...findings, ...headerCheck.findings];
+            }
+          } catch {
+            findings.push({
+              id: "header-check-unavailable",
+              level: "low",
+              title: "Header check unavailable",
+              detail: "This site didn't respond to a lightweight probe within 8 seconds, so header-based signals aren't available. URL-based checks are still shown above.",
+            });
+          }
+        } else if (isPasted) {
+          findings.push({
+            id: "passive-only",
+            level: "good",
+            title: "Passive URL inspection (privacy-first)",
+            detail: "This pasted address was checked locally with heuristics and threat feeds without contacting the server. Deep live header checks are opt-in.",
+          });
+        }
+      }
+
+      const finalScore = clampScore(score);
+      let result = {
+        url: urlString,
+        domain: base.host || (base.safeToFetch ? new URL(urlString).hostname : ""),
+        score: finalScore,
+        redirected: Boolean(cachedHeaders?.origin),
+        confidence: base.confidence || "heuristic",
+        ...grade(finalScore),
+        findings,
+        checkedAt: new Date().toISOString(),
+      };
+
+      // A confirmed local threat-database match overrides the heuristic grade
+      // entirely — this is the ONLY path that produces tone: "critical". See
+      // analyzer.js's applyThreatMatch() doc comment.
+      const match = await checkThreatDatabase(config, urlString);
+      if (match.matched) result = applyThreatMatch(result, match);
+
+      cache.set(key, { result, time: Date.now() });
+      return result;
+    } finally {
+      inFlight.delete(key);
+    }
+  })();
+
+  inFlight.set(key, scanPromise);
+  return scanPromise;
 }
 
 function setBadge(tabId, result) {
@@ -257,6 +272,26 @@ async function clearAllBadges() {
       if (tab.id != null) chrome.action.setBadgeText({ tabId: tab.id, text: "" }).catch(() => {});
     }
   } catch { /* best-effort only */ }
+}
+
+// Extension installation and update lifecycle handler
+if (typeof chrome !== "undefined" && chrome.runtime?.onInstalled) {
+  chrome.runtime.onInstalled.addListener(async (details) => {
+    try {
+      if (details.reason === "install") {
+        const state = await chrome.storage.local.get(["autoScanEnabled", "manualScanCount", "instagramRequirementCompleted"]);
+        const updates = {};
+        if (state.autoScanEnabled === undefined) updates.autoScanEnabled = true;
+        if (state.manualScanCount === undefined) updates.manualScanCount = 0;
+        if (state.instagramRequirementCompleted === undefined) updates.instagramRequirementCompleted = false;
+        if (Object.keys(updates).length > 0) {
+          await chrome.storage.local.set(updates);
+        }
+      }
+    } catch {
+      // Best-effort storage initialization
+    }
+  });
 }
 
 // Pre-navigation dangerous-page blocking (section 4 of the spec). Registers

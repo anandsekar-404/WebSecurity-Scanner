@@ -31,13 +31,36 @@ import { buildDefaultConfig } from "./lib/heuristics/defaults.js";
 
 export const THRESHOLDS = { caution: 30, high: 60 };
 
+/**
+ * Validates and clamps risk scores strictly to integers in the range [0, 100].
+ * Non-finite, NaN, and negative values are handled safely.
+ */
+export function clampScore(score) {
+  const num = typeof score === "number" ? score : Number(score);
+  if (Number.isNaN(num) || !Number.isFinite(num)) return 0;
+  return Math.max(0, Math.min(100, Math.round(num)));
+}
+
 /** Client-side checks over the URL itself — no network required. */
 export function analyzeUrl(urlString, config = buildDefaultConfig()) {
   let url;
   try {
     url = new URL(urlString);
   } catch {
-    return { score: 0, findings: [], safeToFetch: false };
+    return {
+      score: 0,
+      findings: [
+        {
+          id: "invalid-url",
+          level: "medium",
+          title: "Malformed URL",
+          detail: "Could not parse this address as a valid standard web URL.",
+        },
+      ],
+      safeToFetch: false,
+      error: "Malformed address",
+      confidence: "none",
+    };
   }
 
   const ctx = buildUrlContext(url);
@@ -48,6 +71,7 @@ export function analyzeUrl(urlString, config = buildDefaultConfig()) {
       score: 0,
       findings: [{ id: "local", level: "good", title: "Local / private address", detail: "This is a local or private-network address, not a public website." }],
       safeToFetch: false, host: ctx.host, isLocal: true,
+      confidence: "heuristic",
     };
   }
 
@@ -95,7 +119,9 @@ export function analyzeUrl(urlString, config = buildDefaultConfig()) {
 
   findings.push(...detectorFindings.map(({ score: _s, ...rest }) => rest)); // don't leak internal per-finding score into the UI-facing object
 
-  return { score, findings, safeToFetch: true, host: ctx.host, isLocal: false };
+  score = clampScore(score);
+
+  return { score, findings, safeToFetch: true, host: ctx.host, isLocal: false, confidence: "heuristic" };
 }
 
 /** Header / transport checks that require one passive HEAD request. */
@@ -155,20 +181,31 @@ export function analyzeResponse(requestedUrl, response, config = buildDefaultCon
 }
 
 export function grade(score) {
-  if (score >= THRESHOLDS.high) {
+  if (score == null || typeof score !== "number" || Number.isNaN(score) || !Number.isFinite(score)) {
     return {
-      label: "High Risk", tone: "danger",
+      label: "Check Unavailable",
+      tone: "warning",
+      action: "Analysis could not produce a valid security score for this address. Exercise caution.",
+    };
+  }
+  const clamped = clampScore(score);
+  if (clamped >= THRESHOLDS.high) {
+    return {
+      label: "High Risk",
+      tone: "danger",
       action: "Do not enter passwords, payment details, or download files from this page.",
     };
   }
-  if (score >= THRESHOLDS.caution) {
+  if (clamped >= THRESHOLDS.caution) {
     return {
-      label: "Use Caution", tone: "warning",
+      label: "Use Caution",
+      tone: "warning",
       action: "Double-check the address bar and avoid entering sensitive information until you're sure this is the real site.",
     };
   }
   return {
-    label: "Looks Safe", tone: "safe",
+    label: "Looks Safe",
+    tone: "safe",
     action: "No strong warning signs were found by TrustLink's passive checks.",
   };
 }
@@ -193,6 +230,7 @@ export function applyThreatMatch(baseResult, match) {
     score: 100,
     label: "Known Threat",
     tone: "critical",
+    confidence: "verified",
     action: "Do not enter passwords, OTP codes, payment information, or other sensitive information. Go back.",
     findings: [
       {

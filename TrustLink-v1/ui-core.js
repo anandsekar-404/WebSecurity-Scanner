@@ -47,13 +47,22 @@ function countUp(el, to, duration = 700) {
   requestAnimationFrame(tick);
 }
 
+function setSafeIcon(el, iconHtml) {
+  if (!el) return;
+  if (Object.values(ICONS).includes(iconHtml)) {
+    el.innerHTML = iconHtml;
+  } else {
+    el.textContent = "";
+  }
+}
+
 function toneClass(tone) {
   return { safe: "safe", warning: "warning", danger: "danger", critical: "critical" }[tone] || "loading";
 }
 
 function setLoading() {
   $("#statusPill").className = "status-pill loading";
-  $("#pillIcon").innerHTML = pillIcon("loading");
+  setSafeIcon($("#pillIcon"), pillIcon("loading"));
   $("#score").textContent = "…";
   $("#statusLabel").textContent = "Analyzing";
   $("#statusDesc").textContent = "Running passive security checks…";
@@ -66,15 +75,16 @@ function setLoading() {
 
 function showError(message) {
   $("#statusPill").className = "status-pill warning";
-  $("#pillIcon").innerHTML = pillIcon("warning");
+  setSafeIcon($("#pillIcon"), pillIcon("warning"));
   $("#score").textContent = "!";
   $("#statusLabel").textContent = "Check unavailable";
   $("#statusDesc").textContent = message;
   $("#adviceBox").className = "advice-box warning";
   $("#adviceTitle").textContent = "Couldn't complete this check";
   $("#adviceSub").textContent = message;
-  $("#findingsGrid").innerHTML = "";
+  $("#findingsGrid").replaceChildren();
   $("#moreSignalsBtn").hidden = true;
+  $("#findingsExtra").replaceChildren();
   $("#findingsExtra").hidden = true;
   $("#signalCount").textContent = "";
   $("#ctaRow").hidden = true;
@@ -88,30 +98,52 @@ function adviceCopy(result) {
   return { title: "You're good to go", sub: result.action };
 }
 
-function findingCard(f, index) {
-  return `
-    <article class="finding-card ${f.level}" style="animation-delay:${140 + index * 55}ms">
-      <div class="card-top">
-        <span class="card-icon">${cardIcon(f)}</span>
-      </div>
-      <div>
-        <h3>${escapeHtml(f.title)}</h3>
-        <p>${escapeHtml(f.detail)}</p>
-      </div>
-    </article>
-  `;
+function createFindingCard(f, index) {
+  const card = document.createElement("article");
+  const validLevel = ["good", "low", "medium", "high"].includes(f.level) ? f.level : "low";
+  card.className = `finding-card ${validLevel}`;
+  card.style.animationDelay = `${140 + index * 55}ms`;
+
+  const top = document.createElement("div");
+  top.className = "card-top";
+
+  const iconSpan = document.createElement("span");
+  iconSpan.className = "card-icon";
+  setSafeIcon(iconSpan, cardIcon(f));
+  top.appendChild(iconSpan);
+
+  const body = document.createElement("div");
+  const h3 = document.createElement("h3");
+  h3.textContent = f.title || "";
+  const p = document.createElement("p");
+  p.textContent = f.detail || "";
+  body.appendChild(h3);
+  body.appendChild(p);
+
+  card.appendChild(top);
+  card.appendChild(body);
+  return card;
 }
 
-function findingRow(f) {
-  return `
-    <div class="finding-row ${f.level}">
-      <span class="dot"></span>
-      <div>
-        <h4>${escapeHtml(f.title)}</h4>
-        <p>${escapeHtml(f.detail)}</p>
-      </div>
-    </div>
-  `;
+function createFindingRow(f) {
+  const row = document.createElement("div");
+  const validLevel = ["good", "low", "medium", "high"].includes(f.level) ? f.level : "low";
+  row.className = `finding-row ${validLevel}`;
+
+  const dot = document.createElement("span");
+  dot.className = "dot";
+
+  const body = document.createElement("div");
+  const h4 = document.createElement("h4");
+  h4.textContent = f.title || "";
+  const p = document.createElement("p");
+  p.textContent = f.detail || "";
+  body.appendChild(h4);
+  body.appendChild(p);
+
+  row.appendChild(dot);
+  row.appendChild(body);
+  return row;
 }
 
 function render(result, { isManual = false, tab = null } = {}) {
@@ -122,7 +154,7 @@ function render(result, { isManual = false, tab = null } = {}) {
 
   const tone = result.tone;
   $("#statusPill").className = `status-pill ${toneClass(tone)}`;
-  $("#pillIcon").innerHTML = pillIcon(tone);
+  setSafeIcon($("#pillIcon"), pillIcon(tone));
   $("#statusLabel").textContent = result.label;
   $("#statusDesc").textContent = `Risk score ${result.score}/100 — ${result.findings.length} signal${result.findings.length === 1 ? "" : "s"} reviewed.`;
   countUp($("#score"), result.score);
@@ -145,9 +177,19 @@ function render(result, { isManual = false, tab = null } = {}) {
   const primary = sorted.slice(0, 4);
   const rest = sorted.slice(4);
 
-  $("#findingsGrid").innerHTML = primary.length
-    ? primary.map((f, i) => findingCard(f, i)).join("")
-    : '<p class="muted" style="grid-column:1/-1;color:var(--muted);font-size:11px;">No notable signals found.</p>';
+  const grid = $("#findingsGrid");
+  grid.replaceChildren();
+  if (primary.length) {
+    for (let i = 0; i < primary.length; i++) {
+      grid.appendChild(createFindingCard(primary[i], i));
+    }
+  } else {
+    const emptyP = document.createElement("p");
+    emptyP.className = "muted";
+    emptyP.style.cssText = "grid-column:1/-1;color:var(--muted);font-size:11px;";
+    emptyP.textContent = "No notable signals found.";
+    grid.appendChild(emptyP);
+  }
 
   const moreBtn = $("#moreSignalsBtn");
   const extra = $("#findingsExtra");
@@ -155,7 +197,10 @@ function render(result, { isManual = false, tab = null } = {}) {
     moreBtn.hidden = false;
     moreBtn.textContent = `+ ${rest.length} more signal${rest.length === 1 ? "" : "s"}`;
     extra.hidden = true;
-    extra.innerHTML = rest.map(findingRow).join("");
+    extra.replaceChildren();
+    for (const f of rest) {
+      extra.appendChild(createFindingRow(f));
+    }
     moreBtn.onclick = () => {
       const opening = extra.hidden;
       extra.hidden = !opening;
@@ -184,9 +229,12 @@ function render(result, { isManual = false, tab = null } = {}) {
 }
 
 function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
+  return String(str ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function spawnParticles() {
